@@ -1,0 +1,172 @@
+@import "tailwindcss";
+
+/*
+ * Two themes, both taken from Snowball Income and sampled from the rendered
+ * page rather than guessed. Dark is the default because that is how the source
+ * is normally read.
+ *
+ * House rules, unchanged across both:
+ *   - cards with an 8px radius and a hairline border — never a shadow;
+ *   - colour carries data only: gain, loss, one accent. Never decoration;
+ *   - the number stays the hero: large, tightly tracked, tabular.
+ *
+ * Tailwind v4 utilities compile to var(--color-*), so overriding those variables
+ * inside a selector re-themes the whole app without duplicating a single class.
+ */
+@theme {
+  /* Dark — the default. */
+  --color-paper: #282832;
+  --color-surface: #32323e;
+  --color-sunk: #1e1e2d;
+  --color-raised: #3f4254;
+
+  --color-ink: #ffffff;
+  --color-ink-soft: #e9ecef;
+  --color-ink-mute: #adb5bd;
+  --color-ink-faint: #7e8299;
+
+  --color-rule: #474b5a;
+  --color-rule-mid: #4d505f;
+  --color-rule-strong: #e9ecef;
+
+  --color-accent: #00aff5;
+  --color-accent-ink: #4ecbfa;
+  --color-ice: #00aff51f;
+
+  --color-gain: #5cd59b;
+  --color-loss: #f27362;
+  --color-warn: #fea135;
+  --color-info: #9a6afa;
+  --color-flat: #7e8299;
+
+  --font-sans: var(--font-golos), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-plex-mono), ui-monospace, monospace;
+}
+
+/* Light — Snowball's `brand-light`. */
+[data-theme="light"] {
+  --color-paper: #f9fafb;
+  --color-surface: #ffffff;
+  --color-sunk: #f3f6f9;
+  --color-raised: #ebedf3;
+
+  --color-ink: #181c32;
+  --color-ink-soft: #3f4254;
+  --color-ink-mute: #7e8299;
+  --color-ink-faint: #b5b5c3;
+
+  --color-rule: #e4e6ef;
+  --color-rule-mid: #b5b5c3;
+  --color-rule-strong: #181c32;
+
+  --color-accent: #3699ff;
+  --color-accent-ink: #187de4;
+  --color-ice: #e1f0ff;
+
+  --color-gain: #1bc5bd;
+  --color-loss: #f64e60;
+  --color-warn: #ffa800;
+  --color-info: #8950fc;
+  --color-flat: #b5b5c3;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  background: var(--color-paper);
+  color: var(--color-ink-soft);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* Every figure in a column must align with the one above it. */
+.tnum {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+}
+
+/* Ticker symbols and codes: mono gives them the character of a ledger. */
+.code {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.01em;
+}
+
+/* Section eyebrow: small, caps, widely tracked. */
+.eyebrow {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--color-ink-mute);
+}
+
+/*
+ * Display figures. clamp() rather than breakpoints so the headline number
+ * scales continuously — it is the element the page is built around.
+ */
+.display {
+  font-size: clamp(2.25rem, 5.5vw, 3.75rem);
+  font-weight: 500;
+  letter-spacing: -0.03em;
+  line-height: 1;
+  color: var(--color-ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.figure {
+  font-size: clamp(1.25rem, 2.2vw, 1.625rem);
+  font-weight: 500;
+  letter-spacing: -0.015em;
+  font-variant-numeric: tabular-nums;
+}
+
+/* A card: a panel held by a hairline rather than a shadow. */
+.card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-rule);
+  border-radius: 8px;
+}
+
+/* Focus: an accent outline, never a glow. */
+:where(a, button, input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 1px;
+}
+
+::selection {
+  background: var(--color-accent);
+  color: #ffffff;
+}
+
+::-webkit-scrollbar {
+  width: 12px;
+  height: 12px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-rule-mid);
+  border: 4px solid var(--color-paper);
+  border-radius: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.recharts-wrapper:focus,
+.recharts-surface:focus {
+  outline: none;
+}
+
+/* The native date picker is unreadable on a dark field without this. */
+input[type="date"]::-webkit-calendar-picker-indicator {
+  opacity: 0.55;
+  cursor: pointer;
+  filter: invert(var(--picker-invert, 1));
+}
+[data-theme="light"] {
+  --picker-invert: 0;
+}

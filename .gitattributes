@@ -1,0 +1,13 @@
+# Normalise line endings in the repository.
+#
+# Without this the project was authored on Windows with CRLF, and every file
+# would show up as fully modified for anyone cloning on macOS or Linux.
+* text=auto eol=lf
+
+# Windows-only script: it must keep CRLF or PowerShell may misparse it.
+*.ps1 text eol=crlf
+
+# Never touch binary content.
+*.png binary
+*.ico binary
+*.db binary

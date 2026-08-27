@@ -1,0 +1,88 @@
+import { DatabaseSync } from "node:sqlite";
+import { readFileSync, mkdirSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { runMigrations } from "@/lib/db/migrate";
+
+/**
+ * Single process-wide connection. node:sqlite is synchronous, so there is no
+ * pool to manage; Next.js dev-mode module reloads are handled by stashing the
+ * handle on globalThis.
+ */
+type Row = Record<string, unknown>;
+
+const DB_PATH = resolve(process.env.GLACIER_DB_PATH || "./data/glacier.db");
+
+declare global {
+  // eslint-disable-next-line no-var
+  var __glacierDb: DatabaseSync | undefined;
+}
+
+function open(): DatabaseSync {
+  mkdirSync(dirname(DB_PATH), { recursive: true });
+  const database = new DatabaseSync(DB_PATH);
+  const schemaPath = resolve(process.cwd(), "src/lib/db/schema.sql");
+  database.exec(readFileSync(schemaPath, "utf8"));
+  runMigrations(database);
+  return database;
+}
+
+export const db: DatabaseSync = globalThis.__glacierDb ?? (globalThis.__glacierDb = open());
+
+/**
+ * node:sqlite returns rows with a null prototype. React Server Components
+ * refuse to serialise those to Client Components ("Classes or null prototypes
+ * are not supported"), so every row is normalised into a plain object here —
+ * once, at the boundary, rather than at each call site.
+ */
+function plain<T>(row: unknown): T {
+  return { ...(row as object) } as T;
+}
+
+/** All rows for a query. */
+export function all<T = Row>(sql: string, ...params: unknown[]): T[] {
+  return (db.prepare(sql).all(...(params as never[])) as unknown[]).map((row) => plain<T>(row));
+}
+
+/** First row, or undefined. */
+export function get<T = Row>(sql: string, ...params: unknown[]): T | undefined {
+  const row = db.prepare(sql).get(...(params as never[]));
+  return row === undefined ? undefined : plain<T>(row);
+}
+
+/** Execute a write; returns lastInsertRowid and changes. */
+export function run(sql: string, ...params: unknown[]) {
+  return db.prepare(sql).run(...(params as never[]));
+}
+
+/** Wrap a function in a transaction. node:sqlite has no helper, so do it by hand. */
+export function tx<T>(fn: () => T): T {
+  db.exec("BEGIN");
+  try {
+    const result = fn();
+    db.exec("COMMIT");
+    return result;
+  } catch (error) {
+    db.exec("ROLLBACK");
+    throw error;
+  }
+}
+
+export function nowIso(): string {
+  return new Date().toISOString();
+}
+
+export function today(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
+export function getSetting(key: string): string | undefined {
+  return get<{ value: string }>("SELECT value FROM settings WHERE key = ?", key)?.value;
+}
+
+export function setSetting(key: string, value: string): void {
+  run(
+    "INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+    key,
+    value,
+  );
+}
