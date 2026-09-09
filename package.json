@@ -13,7 +13,7 @@
     "stop": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/stop.ps1"
   },
   "dependencies": {
-    "next": "15.5.4",
+    "next": "^16.3.4",
     "react": "19.1.1",
     "react-dom": "19.1.1",
     "recharts": "^2.15.4",
