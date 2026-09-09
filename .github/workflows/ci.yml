@@ -1,0 +1,44 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  # Dependencies rot without any commit: a Monday run catches a new advisory
+  # before it has a chance to sit in the repository for a month.
+  schedule:
+    - cron: "17 6 * * 1"
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    env:
+      # Required by lib/crypto.ts in production mode; a throwaway value is
+      # enough to build and test, and nothing real is ever encrypted here.
+      GLACIER_SECRET: ci-only-not-a-real-secret-0000000000000000
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          # node:sqlite is a built-in from 22 onward — the whole reason the
+          # project needs no native modules.
+          node-version: "24"
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Тесты расчётного ядра
+        run: npm test
+
+      - name: Сборка и проверка типов
+        run: npx next build
+
+      # Audit last: a failure here is worth knowing about, but it should not
+      # mask a broken build or a failing test.
+      - name: Проверка уязвимостей
+        run: npm audit --audit-level=high
