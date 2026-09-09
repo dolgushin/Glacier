@@ -36,7 +36,14 @@ jobs:
         run: npm test
 
       - name: Сборка и проверка типов
-        run: npx next build
+        # The failure text is echoed as an annotation because raw job logs need
+        # an authenticated token to read, and a bare "exit code 1" says nothing.
+        run: |
+          set -o pipefail
+          npx next build 2>&1 | tee /tmp/build.log || {
+            echo "::error::$(tail -c 1200 /tmp/build.log | tr '\n' '⏎')"
+            exit 1
+          }
 
       # Audit last: a failure here is worth knowing about, but it should not
       # mask a broken build or a failing test.
