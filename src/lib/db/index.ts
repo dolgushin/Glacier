@@ -1,7 +1,8 @@
 import { DatabaseSync } from "node:sqlite";
-import { readFileSync, mkdirSync } from "node:fs";
+import { mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { runMigrations } from "@/lib/db/migrate";
+import { SCHEMA } from "@/lib/db/schema";
 
 /**
  * Single process-wide connection. node:sqlite is synchronous, so there is no
@@ -10,7 +11,13 @@ import { runMigrations } from "@/lib/db/migrate";
  */
 type Row = Record<string, unknown>;
 
-const DB_PATH = resolve(process.env.GLACIER_DB_PATH || "./data/glacier.db");
+/*
+ * The database location is deliberately configurable — a VPS deployment puts it
+ * on a mounted volume, not inside the bundle. Turbopack cannot trace a path it
+ * cannot see, and warns that it will include the whole project in the output;
+ * the annotation says this one is intended.
+ */
+const DB_PATH = resolve(/* turbopackIgnore: true */ process.env.GLACIER_DB_PATH || "./data/glacier.db");
 
 declare global {
   // eslint-disable-next-line no-var
@@ -18,10 +25,9 @@ declare global {
 }
 
 function open(): DatabaseSync {
-  mkdirSync(dirname(DB_PATH), { recursive: true });
+  mkdirSync(/* turbopackIgnore: true */ dirname(DB_PATH), { recursive: true });
   const database = new DatabaseSync(DB_PATH);
-  const schemaPath = resolve(process.cwd(), "src/lib/db/schema.sql");
-  database.exec(readFileSync(schemaPath, "utf8"));
+  database.exec(SCHEMA);
   runMigrations(database);
   return database;
 }

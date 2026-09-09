@@ -1,6 +1,15 @@
--- Glacier schema. Applied idempotently by src/lib/db/index.ts on first connection.
--- SQLite dialect (node:sqlite / DatabaseSync).
-
+/**
+ * Database schema, inlined as a string rather than read from disk.
+ *
+ * It used to live in schema.sql and be loaded with readFileSync from a path
+ * built out of process.cwd(). That works when the process runs from the
+ * repository root and nowhere else: a standalone or serverless build does not
+ * ship src/, and Turbopack refuses to trace a dynamically constructed path —
+ * which is exactly what broke the production build on CI.
+ *
+ * Applied idempotently on every connection. SQLite dialect (node:sqlite).
+ */
+export const SCHEMA = `
 PRAGMA journal_mode = WAL;
 PRAGMA foreign_keys = ON;
 
@@ -99,14 +108,14 @@ CREATE TABLE IF NOT EXISTS transactions (
                                    -- DEPOSIT WITHDRAWAL FEE TAX INTEREST SPLIT
   ts            TEXT    NOT NULL,  -- ISO 8601
   quantity      REAL    NOT NULL DEFAULT 0,
-  price         REAL    NOT NULL DEFAULT 0,   -- per unit, in `currency`
-  amount        REAL    NOT NULL DEFAULT 0,   -- signed cash effect, in `currency`
+  price         REAL    NOT NULL DEFAULT 0,   -- per unit, in the row's currency
+  amount        REAL    NOT NULL DEFAULT 0,   -- signed cash effect, same currency
   fee           REAL    NOT NULL DEFAULT 0,
   tax           REAL    NOT NULL DEFAULT 0,
   currency      TEXT    NOT NULL DEFAULT 'RUB',
-  fx_rate       REAL    NOT NULL DEFAULT 1,   -- `currency` -> portfolio base, at ts
+  fx_rate       REAL    NOT NULL DEFAULT 1,   -- currency -> portfolio base, at ts
   note          TEXT    NOT NULL DEFAULT '',
-  source        TEXT    NOT NULL DEFAULT 'manual',  -- manual | csv | tinvest
+  source        TEXT    NOT NULL DEFAULT 'manual',  -- manual | csv | broker:id
   external_id   TEXT,                               -- broker operation id
   created_at    TEXT    NOT NULL
 );
@@ -126,7 +135,7 @@ CREATE TABLE IF NOT EXISTS prices (
 CREATE TABLE IF NOT EXISTS fx_rates (
   date     TEXT NOT NULL,                        -- YYYY-MM-DD
   currency TEXT NOT NULL,
-  rate     REAL NOT NULL,                        -- RUB per 1 unit of `currency`
+  rate     REAL NOT NULL,                        -- RUB per 1 unit of the currency
   PRIMARY KEY (date, currency)
 ) WITHOUT ROWID;
 
@@ -152,7 +161,7 @@ CREATE INDEX IF NOT EXISTS idx_payouts_dates ON payouts(pay_date, ex_date);
 CREATE TABLE IF NOT EXISTS broker_connections (
   id              INTEGER PRIMARY KEY,
   user_id         INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  broker          TEXT    NOT NULL,              -- tinvest | bybit | binance
+  broker          TEXT    NOT NULL,              -- tinvest | alor | bybit | binance
   label           TEXT    NOT NULL DEFAULT '',   -- user's own name for the key
   credentials_enc TEXT    NOT NULL,              -- AES-256-GCM JSON, never plaintext
   status          TEXT    NOT NULL DEFAULT '',   -- ok | error
@@ -194,3 +203,4 @@ CREATE TABLE IF NOT EXISTS settings (
   key   TEXT PRIMARY KEY,
   value TEXT NOT NULL
 );
+`;
