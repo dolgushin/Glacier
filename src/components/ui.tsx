@@ -316,7 +316,15 @@ export function AllocationList({
   items,
   formatValue,
 }: {
-  items: { key: string; label: string; share: number; value: number; color: string; targetShare?: number }[];
+  items: {
+    key: string;
+    label: string;
+    share: number;
+    value: number;
+    color: string;
+    targetShare?: number;
+    profit?: number;
+  }[];
   formatValue: (value: number) => string;
 }) {
   if (items.length === 0) {
@@ -326,33 +334,41 @@ export function AllocationList({
   return (
     <div>
       {items.map((item) => (
-        <div
-          key={item.key}
-          className="flex items-baseline justify-between gap-3 border-b border-rule py-2.5 last:border-0"
-        >
-          <span className="flex min-w-0 items-center gap-2">
-            <span
-              className="h-2.5 w-2.5 shrink-0 rounded-full"
-              style={{ background: item.color }}
-            />
-            <span className="truncate text-sm text-ink">{item.label}</span>
-          </span>
-          <span className="tnum shrink-0 text-sm">
-            <span className="text-ink-mute">{formatValue(item.value)}</span>
-            <span className="ml-3 inline-block w-16 text-right font-semibold text-ink">
+        // Two lines rather than one: with value, profit, share and target all
+        // competing for a third of a dashboard row, the label was the thing that
+        // got truncated — and the label is the part you actually read.
+        <div key={item.key} className="border-b border-rule py-2.5 last:border-0">
+          <div className="flex items-baseline justify-between gap-3">
+            <span className="flex min-w-0 items-center gap-2">
+              <span
+                className="h-2.5 w-2.5 shrink-0 rounded-full"
+                style={{ background: item.color }}
+              />
+              <span className="truncate text-sm text-ink">{item.label}</span>
+            </span>
+            <span className="tnum shrink-0 text-sm font-semibold text-ink">
               {percent(item.share, 1)}
+            </span>
+          </div>
+
+          <div className="tnum mt-0.5 flex items-baseline justify-between gap-3 pl-4.5 text-xs">
+            <span className="text-ink-mute">
+              {formatValue(item.value)}
+              {item.profit !== undefined && item.profit !== 0 && (
+                <span className={`ml-2 ${pnlClass(item.profit)}`}>{signedMoney(item.profit)}</span>
+              )}
             </span>
             {item.targetShare !== undefined && item.targetShare > 0 && (
               // Drift against the target, so rebalancing needs no second view.
               <span
-                className={`ml-2 inline-block w-14 text-right text-xs ${
+                className={
                   Math.abs(item.share - item.targetShare) < 0.02 ? "text-ink-faint" : "text-warn"
-                }`}
+                }
               >
                 цель {percent(item.targetShare, 0)}
               </span>
             )}
-          </span>
+          </div>
         </div>
       ))}
     </div>

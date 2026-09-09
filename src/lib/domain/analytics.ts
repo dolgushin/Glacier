@@ -10,6 +10,8 @@ export interface AllocationSlice {
   share: number;
   color: string;
   targetShare?: number;
+  /** Unrealised profit of the holdings in this slice, where meaningful. */
+  profit?: number;
 }
 
 export interface Summary {
@@ -139,10 +141,69 @@ export function summarize({
   };
 }
 
+// --------------------------------------------------- per-position metrics
+
+export interface PositionMetrics {
+  /** Money-weighted annualised return for this holding alone. */
+  xirr: number | null;
+  /** Income received, over the cost of what is still held. */
+  yieldOnCost: number | null;
+  /** Income received over the last 12 months, over current market value. */
+  trailingYield: number | null;
+  /** Total profit as a share of cost basis. */
+  totalReturn: number | null;
+}
+
+/**
+ * Per-instrument return.
+ *
+ * The portfolio XIRR answers "how are my investments doing"; this answers
+ * "which of them is carrying the result". Same flows, same solver, narrowed to
+ * one instrument and closed off with its current market value.
+ */
+export function positionMetrics(
+  position: Position,
+  transactions: Transaction[],
+): PositionMetrics {
+  const ledger = sortLedger(
+    transactions.filter((tx) => tx.instrument_id === position.instrument.id),
+  );
+
+  const flows: CashFlow[] = [];
+  for (const tx of ledger) {
+    const effect = cashEffect(tx);
+    if (effect !== 0) flows.push({ date: tx.ts, amount: effect });
+  }
+  if (position.marketValue !== 0) {
+    flows.push({ date: new Date().toISOString(), amount: position.marketValue });
+  }
+
+  // Income over the trailing twelve months, so a yield is not inflated by a
+  // one-off payment made years ago.
+  const yearAgo = new Date(Date.now() - 365 * 86_400_000).toISOString();
+  let trailingIncome = 0;
+  for (const tx of ledger) {
+    if (tx.ts < yearAgo) continue;
+    if (tx.type === "DIVIDEND" || tx.type === "COUPON" || tx.type === "AMORTIZATION") {
+      trailingIncome += tx.amount;
+    }
+  }
+
+  return {
+    xirr: xirr(flows),
+    yieldOnCost: position.costBasis > 0 ? position.income / position.costBasis : null,
+    trailingYield: position.marketValue > 0 ? trailingIncome / position.marketValue : null,
+    totalReturn: position.costBasis > 0 ? position.totalPnl / position.costBasis : null,
+  };
+}
+
 // ------------------------------------------------------------- allocation
 
 function toSlices(
-  buckets: Map<string, { label: string; value: number; color?: string; target?: number }>,
+  buckets: Map<
+    string,
+    { label: string; value: number; color?: string; target?: number; profit?: number }
+  >,
 ): AllocationSlice[] {
   const total = [...buckets.values()].reduce((sum, bucket) => sum + bucket.value, 0);
   return [...buckets.entries()]
@@ -154,6 +215,7 @@ function toSlices(
       share: total > 0 ? bucket.value / total : 0,
       color: bucket.color ?? colorFor(index),
       targetShare: bucket.target,
+      profit: bucket.profit,
     }))
     .sort((a, b) => b.value - a.value);
 }
@@ -163,7 +225,10 @@ export function allocationByCategory(
   categories: Category[],
 ): AllocationSlice[] {
   const byId = new Map(categories.map((category) => [category.id, category]));
-  const buckets = new Map<string, { label: string; value: number; color?: string; target?: number }>();
+  const buckets = new Map<
+    string,
+    { label: string; value: number; color?: string; target?: number; profit?: number }
+  >();
 
   for (const category of categories) {
     buckets.set(String(category.id), {
@@ -171,9 +236,10 @@ export function allocationByCategory(
       value: 0,
       color: category.color,
       target: category.target_weight / 100,
+      profit: 0,
     });
   }
-  buckets.set("none", { label: "Без категории", value: 0, color: "#b5b5c3" });
+  buckets.set("none", { label: "Без категории", value: 0, color: "#b5b5c3", profit: 0 });
 
   for (const position of positions) {
     if (position.quantity <= 0) continue;
@@ -183,6 +249,7 @@ export function allocationByCategory(
         : "none";
     const bucket = buckets.get(key)!;
     bucket.value += position.marketValue * position.fxRate;
+    bucket.profit = (bucket.profit ?? 0) + position.unrealizedPnl * position.fxRate;
   }
 
   return toSlices(buckets);
