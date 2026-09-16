@@ -1,0 +1,22 @@
+services:
+  glacier:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: glacier:latest
+    container_name: glacier-app
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - GLACIER_DB_PATH=/app/data/glacier.db
+    volumes:
+      - ./data:/app/data
+    networks:
+      - proxy
+
+networks:
+  proxy:
+    external: true
