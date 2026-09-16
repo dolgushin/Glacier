@@ -93,6 +93,31 @@ export function loadContext(
   };
 }
 
+/**
+ * The close before the most recent one, per instrument.
+ *
+ * Deliberately "previous known close" rather than "yesterday": a weekend, a
+ * holiday, or a day the service was not running all produce gaps, and anchoring
+ * to a calendar date would silently report a zero change on every Monday.
+ */
+export function loadPreviousCloses(instrumentIds: number[]): Map<number, number> {
+  const previous = new Map<number, number>();
+  if (instrumentIds.length === 0) return previous;
+
+  const rows = all<{ instrument_id: number; close: number }>(
+    `SELECT instrument_id, close FROM (
+       SELECT instrument_id, close,
+              ROW_NUMBER() OVER (PARTITION BY instrument_id ORDER BY date DESC) AS rn
+         FROM prices
+        WHERE instrument_id IN (${instrumentIds.map(() => "?").join(",")})
+     ) WHERE rn = 2`,
+    ...instrumentIds,
+  );
+
+  for (const row of rows) previous.set(row.instrument_id, row.close);
+  return previous;
+}
+
 /** Daily close history for the instruments in play, for the value chart. */
 export function loadPriceHistory(instrumentIds: number[]): Map<number, Map<string, number>> {
   const history = new Map<number, Map<string, number>>();

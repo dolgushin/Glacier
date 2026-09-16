@@ -1,12 +1,18 @@
 import Link from "next/link";
 import { requireUser } from "@/lib/auth";
-import { loadContext, loadPriceHistory, resolvePortfolioId } from "@/lib/context";
+import {
+  loadContext,
+  loadPreviousCloses,
+  loadPriceHistory,
+  resolvePortfolioId,
+} from "@/lib/context";
 import { listPortfolios } from "@/lib/repo";
 import { refreshIfStale } from "@/lib/sync";
 import {
   allocationByCategory,
   allocationByInstrument,
   allocationByKind,
+  computeDayChange,
   valueSeries,
 } from "@/lib/domain/analytics";
 import { buildCalendar, byMonth, forwardIncome } from "@/lib/domain/payouts";
@@ -93,6 +99,8 @@ export default async function DashboardPage({
     );
   }
 
+  const dayChange = computeDayChange(summary.positions, loadPreviousCloses([...instruments.keys()]));
+
   const priceHistory = loadPriceHistory([...instruments.keys()]);
   const series = valueSeries(transactions, priceHistory, instruments, fxRates, baseCurrency);
 
@@ -128,6 +136,21 @@ export default async function DashboardPage({
                 <span className="text-sm text-ink-soft">
                   {signedPercent(profitShare)} к вложенному
                 </span>
+                {dayChange.covered > 0 && (
+                  <span className="tnum text-sm">
+                    <span className={pnlClass(dayChange.absolute)}>
+                      {signedMoney(dayChange.absolute, baseCurrency)}{" "}
+                      {signedPercent(dayChange.percent)}
+                    </span>
+                    <span className="ml-1.5 text-ink-mute">
+                      за день
+                      {/* Say so when the figure covers only part of the portfolio,
+                          rather than quietly understating the move. */}
+                      {dayChange.covered < dayChange.total &&
+                        ` · по ${dayChange.covered} из ${dayChange.total} позиций`}
+                    </span>
+                  </span>
+                )}
               </>
             }
           />

@@ -40,6 +40,8 @@ export interface AssetRow {
   income: number;
   totalPnl: number;
   share: number;
+  /** Move since the previous close, null when there is nothing to compare to. */
+  dayChange: number | null;
   xirr: number | null;
   yieldOnCost: number | null;
   trailingYield: number | null;
@@ -53,6 +55,7 @@ type SortKey =
   | "unrealizedPnl"
   | "totalPnl"
   | "xirr"
+  | "dayChange"
   | "income"
   | "trailingYield";
 
@@ -60,6 +63,12 @@ const COLUMNS: { key: SortKey; label: string; align: "left" | "right"; title?: s
   { key: "symbol", label: "Актив", align: "left" },
   { key: "marketValue", label: "Стоимость", align: "right" },
   { key: "share", label: "Доля", align: "right" },
+  {
+    key: "dayChange",
+    label: "За день",
+    align: "right",
+    title: "Изменение с предыдущей известной котировки",
+  },
   { key: "income", label: "Выплаты", align: "right", title: "Полученные дивиденды и купоны" },
   {
     key: "trailingYield",
@@ -218,6 +227,16 @@ export function AssetsTable({
 
                 <Td align="right" className="tnum text-ink-soft">
                   {row.isOpen ? percent(row.share, 1) : "—"}
+                </Td>
+
+                <Td align="right" className="tnum">
+                  {row.isOpen && row.dayChange !== null ? (
+                    <span className={pnlClass(row.dayChange)}>
+                      {signedMoney(row.dayChange, baseCurrency)}
+                    </span>
+                  ) : (
+                    <span className="text-ink-faint">—</span>
+                  )}
                 </Td>
 
                 <Td align="right" className="tnum text-ink-soft">

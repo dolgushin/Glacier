@@ -141,6 +141,62 @@ export function summarize({
   };
 }
 
+// ------------------------------------------------------------ day change
+
+export interface DayChange {
+  /** Absolute move since the previous close, in base currency. */
+  absolute: number;
+  /** Move as a share of what the position was worth at the previous close. */
+  percent: number | null;
+  /** Per-instrument move, in base currency. */
+  byInstrument: Map<number, number>;
+  /** How many holdings had a previous close to compare against. */
+  covered: number;
+  total: number;
+}
+
+/**
+ * Movement since the previous close.
+ *
+ * Current price comes from the instrument's cached last price — the freshest
+ * figure available — and is compared against the last close recorded before it.
+ * A holding with no prior close is skipped rather than counted as flat, and the
+ * coverage count is returned so the UI can say the number is partial instead of
+ * quietly understating the move.
+ */
+export function computeDayChange(
+  positions: Position[],
+  previousCloses: Map<number, number>,
+): DayChange {
+  const byInstrument = new Map<number, number>();
+  let absolute = 0;
+  let previousValue = 0;
+  let covered = 0;
+  let total = 0;
+
+  for (const position of positions) {
+    if (position.quantity <= 0 || position.lastPrice === null) continue;
+    total++;
+
+    const previous = previousCloses.get(position.instrument.id);
+    if (previous === undefined || !(previous > 0)) continue;
+    covered++;
+
+    const move = (position.lastPrice - previous) * position.quantity * position.fxRate;
+    byInstrument.set(position.instrument.id, move);
+    absolute += move;
+    previousValue += previous * position.quantity * position.fxRate;
+  }
+
+  return {
+    absolute,
+    percent: previousValue > 0 ? absolute / previousValue : null,
+    byInstrument,
+    covered,
+    total,
+  };
+}
+
 // --------------------------------------------------- per-position metrics
 
 export interface PositionMetrics {

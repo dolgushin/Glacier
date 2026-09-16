@@ -1,7 +1,7 @@
 import { requireUser } from "@/lib/auth";
-import { loadContext, resolvePortfolioId } from "@/lib/context";
+import { loadContext, loadPreviousCloses, resolvePortfolioId } from "@/lib/context";
 import { listPortfolios } from "@/lib/repo";
-import { positionMetrics } from "@/lib/domain/analytics";
+import { computeDayChange, positionMetrics } from "@/lib/domain/analytics";
 import { KIND_LABELS } from "@/lib/types";
 import { money, percent, pnlClass, signedMoney } from "@/lib/format";
 import { Empty, Metric, Section, Table, Td, Th } from "@/components/ui";
@@ -24,6 +24,11 @@ export default async function AssetsPage({
   const { summary, baseCurrency, categories, transactions, fxRates } = context;
 
   const categoryNames = new Map(categories.map((category) => [category.id, category.name]));
+
+  const dayChange = computeDayChange(
+    summary.positions,
+    loadPreviousCloses(summary.positions.map((position) => position.instrument.id)),
+  );
 
   const rows: AssetRow[] = summary.positions.map((position) => {
     const rate = position.fxRate;
@@ -53,6 +58,7 @@ export default async function AssetsPage({
       xirr: metrics.xirr,
       yieldOnCost: metrics.yieldOnCost,
       trailingYield: metrics.trailingYield,
+      dayChange: dayChange.byInstrument.get(position.instrument.id) ?? null,
       isOpen: position.quantity > 0,
     };
   });
