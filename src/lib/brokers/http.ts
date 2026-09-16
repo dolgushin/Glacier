@@ -25,10 +25,9 @@ const TLS_CODES = new Set([
 
 const CA_HINT =
   "Сервер брокера использует сертификат российского УЦ Минцифры, которого нет среди доверенных " +
-  "у Node.js. Скачайте корневой сертификат на https://www.gosuslugi.ru/crt, сохраните его рядом " +
-  "с проектом (например certs/russian-trusted-root.pem) и запускайте сервис с переменной " +
-  "NODE_EXTRA_CA_CERTS=./certs/russian-trusted-root.pem — подробности в README, раздел " +
-  "«Сертификат для Т-Инвестиций».";
+  "у Node.js. Связка сертификатов входит в проект: убедитесь, что файл " +
+  "certs/russian-trusted-ca-bundle.pem на месте, и перезапустите сервис командой npm start — " +
+  "он подхватывает сертификат сам. Подробности в README, раздел «Сертификат для Т-Инвестиций».";
 
 /** True when the running process was started with an extra CA bundle. */
 export function hasExtraCa(): boolean {

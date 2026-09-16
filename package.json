@@ -4,9 +4,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "next dev",
+    "dev": "node scripts/with-ca.mjs dev",
     "build": "next build",
-    "start": "next start",
+    "start": "node scripts/with-ca.mjs start",
     "lint": "next lint",
     "seed": "node --import ./scripts/register-alias.mjs scripts/seed.ts",
     "test": "node --import ./scripts/register-alias.mjs --test tests/xirr.test.ts tests/positions.test.ts tests/csv.test.ts tests/brokers.test.ts tests/alor.test.ts",
