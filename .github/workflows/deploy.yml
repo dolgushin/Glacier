@@ -29,15 +29,15 @@ jobs:
           PORT: ${{ secrets.VPS_PORT }}
         run: |
           SSH_OPTS="-p ${PORT:-22} -o StrictHostKeyChecking=no -i ~/.ssh/id_deploy"
-          # First run: create data/ and bootstrap .env from the example.
-          # Existing .env (with GLACIER_SECRET) is never touched.
-          ssh $SSH_OPTS "$USER@$HOST" '\
-            mkdir -p /opt/glacier/data && \
-            [ -f /opt/glacier/.env ] || cp /opt/glacier/.env.example /opt/glacier/.env'
-
-          # Push the repository, keeping server-only state (.env, data/) intact.
+          # Push the repository first, keeping server-only state (.env, data/) intact.
+          ssh $SSH_OPTS "$USER@$HOST" 'mkdir -p /opt/glacier/data'
           tar czf - --exclude .git --exclude data --exclude .env . | \
             ssh $SSH_OPTS "$USER@$HOST" 'tar xzf - -C /opt/glacier'
+
+          # First run: bootstrap .env from the example (it only exists after the push).
+          # An existing .env (with GLACIER_SECRET) is never touched.
+          ssh $SSH_OPTS "$USER@$HOST" '\
+            [ -f /opt/glacier/.env ] || cp /opt/glacier/.env.example /opt/glacier/.env'
 
           ssh $SSH_OPTS "$USER@$HOST" '\
             cd /opt/glacier && \
