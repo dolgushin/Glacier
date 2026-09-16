@@ -19,5 +19,12 @@ COPY --from=build /app/package.json /app/package-lock.json ./
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/.next ./.next
 COPY --from=build /app/next.config.ts ./next.config.ts
+# npm start runs through node scripts/with-ca.mjs, so the scripts dir
+# must exist at runtime (it only needs with-ca.mjs, but the whole dir
+# is tiny and future-proof).
+COPY --from=build /app/scripts ./scripts
+# The CA bundle is tracked in the repo; with-ca.mjs picks it up from
+# the working directory so T-Invest works with no extra setup.
+COPY --from=build /app/certs ./certs
 EXPOSE 3000
 CMD ["npm", "start"]
