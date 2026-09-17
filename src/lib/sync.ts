@@ -3,7 +3,7 @@ import { instrumentsInUse, setPrice } from "@/lib/repo";
 import { fetchQuotes, fetchBondPayouts, marketFor } from "@/lib/providers/moex";
 import { fetchCryptoPrices } from "@/lib/providers/coingecko";
 import { fetchRates } from "@/lib/providers/cbr";
-import type { Instrument } from "@/lib/types";
+import { isDerivative, type Instrument } from "@/lib/types";
 
 /**
  * Background refresh of everything the app reads from the outside world.
@@ -80,6 +80,11 @@ export async function refreshQuotes(): Promise<{ updated: number; failed: number
   const coingecko: Instrument[] = [];
 
   for (const instrument of instruments) {
+    // FORTS contracts are not on the stock market's ISS endpoints, and an
+    // expired one is not quoted anywhere. Asking anyway produced a silent miss
+    // per contract and left the request looking like a failed share lookup.
+    if (isDerivative(instrument.kind)) continue;
+
     if (instrument.source === "moex") {
       const market = marketFor(instrument.kind);
       const board = instrument.board || (instrument.kind === "bond" ? "TQCB" : "TQBR");

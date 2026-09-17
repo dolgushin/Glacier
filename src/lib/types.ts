@@ -1,6 +1,25 @@
 export type Role = "user" | "admin";
 
-export type InstrumentKind = "share" | "bond" | "etf" | "crypto" | "currency" | "custom";
+export type InstrumentKind =
+  | "share"
+  | "bond"
+  | "etf"
+  | "crypto"
+  | "currency"
+  | "futures"
+  | "option"
+  | "custom";
+
+/**
+ * Derivatives are held, not owned: a futures position is variation margin, not a
+ * lot with a cost basis, and a contract that expired leaves no asset behind. The
+ * FIFO engine models ownership, so these are kept out of portfolio value and
+ * counted only through the money they moved.
+ */
+export const DERIVATIVE_KINDS: InstrumentKind[] = ["futures", "option"];
+
+export const isDerivative = (kind: InstrumentKind): boolean =>
+  kind === "futures" || kind === "option";
 
 export type TxType =
   | "BUY"
@@ -46,6 +65,8 @@ export const KIND_LABELS: Record<InstrumentKind, string> = {
   etf: "Фонд",
   crypto: "Криптовалюта",
   currency: "Валюта",
+  futures: "Фьючерс",
+  option: "Опцион",
   custom: "Прочее",
 };
 

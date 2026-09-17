@@ -8,7 +8,8 @@ import {
   type RemoteAccount,
   type RemoteBalance,
 } from "@/lib/brokers/types";
-import type { InstrumentKind, TxType } from "@/lib/types";
+import { derivativeKind, expiryFromSymbol } from "@/lib/brokers/derivatives";
+import { isDerivative, type InstrumentKind, type TxType } from "@/lib/types";
 
 /**
  * T-Invest (Т-Инвестиции).
@@ -112,6 +113,10 @@ function mapKind(instrumentType: string): InstrumentKind {
       return "etf";
     case "currency":
       return "currency";
+    case "futures":
+      return "futures";
+    case "option":
+      return "option";
     default:
       return "custom";
   }
@@ -138,20 +143,29 @@ async function describeInstrument(
     const raw = payload.instrument;
     if (!raw?.ticker) return null;
 
-    const kind = mapKind(raw.instrumentType ?? "");
+    const declared = mapKind(raw.instrumentType ?? "");
+    // The ticker is consulted only where the catalog gave nothing useful, so a
+    // contract T-Invest classified itself still wins over the pattern match.
+    const kind =
+      declared === "custom" ? (derivativeKind(raw.ticker) ?? declared) : declared;
+    // Derivatives trade on FORTS, not on the stock market: leaving the board
+    // empty keeps them out of the TQBR quote request that can never match them.
+    const board = isDerivative(kind) ? "" : kind === "bond" ? "TQCB" : "TQBR";
     return {
       source: "moex",
       symbol: raw.ticker.toUpperCase(),
       name: raw.name ?? raw.ticker,
       kind,
       currency: normaliseCurrency(raw.currency),
-      board: kind === "bond" ? "TQCB" : "TQBR",
-      sourceId: kind === "bond" ? "TQCB" : "TQBR",
+      board,
+      sourceId: board,
       isin: raw.isin || null,
       figi: raw.figi ?? figi,
       lotSize: raw.lot ?? 1,
       faceValue: raw.nominal ? toNumber(raw.nominal) : null,
-      maturityDate: raw.maturityDate ? raw.maturityDate.slice(0, 10) : null,
+      maturityDate:
+        (raw.maturityDate ? raw.maturityDate.slice(0, 10) : null) ??
+        (isDerivative(kind) ? expiryFromSymbol(raw.ticker) : null),
     };
   } catch (error) {
     // One unknown instrument must not abort a whole sync; the engine counts it.

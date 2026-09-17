@@ -157,3 +157,63 @@ test("cash balance is derived per currency", () => {
   // 100000 - 25100 + 2958
   assert.equal(Math.round(balances.get("RUB") as number), 77858);
 });
+
+// ------------------------------------------------- holdings that must not count
+
+/** Build against a one-off instrument rather than the shared SBER fixture. */
+const buildWith = (overrides: Record<string, unknown>, transactions: unknown[]) =>
+  buildPositions({
+    transactions: transactions as never,
+    instruments: new Map([[1, { ...(instrument as object), ...overrides } as never]]),
+    fxRates: new Map(),
+    baseCurrency: "RUB",
+    asOf: "2026-09-17",
+  });
+
+test("an unimported reverse split is excluded instead of inflating the portfolio", () => {
+  // VTB, reported by a real account: 1 700 018 pre-split units at 0,09 ₽ each,
+  // priced with the post-split quote of 50,07 ₽ — 85 million out of 153 000.
+  const [position] = buildWith(
+    { symbol: "VTBR", last_price: 50.07 },
+    [tx({ type: "BUY", ts: "2023-05-01", quantity: 1_700_018, price: 0.09 })],
+  );
+
+  assert.equal(position.anomaly, "suspect-split");
+  assert.equal(position.marketValue, 0);
+  assert.equal(position.unrealizedPnl, 0);
+  // The excluded money is reported, not thrown away.
+  assert.ok(position.excludedValue > 85_000_000);
+});
+
+test("an ordinary multi-bagger is still counted", () => {
+  // 10x is a plausible market move and must not trip the split guard.
+  const [position] = buildWith({ last_price: 2500 }, [
+    tx({ type: "BUY", ts: "2024-01-10", quantity: 100, price: 250 }),
+  ]);
+
+  assert.equal(position.anomaly, null);
+  assert.equal(position.marketValue, 250_000);
+});
+
+test("an expired futures contract leaves the portfolio value alone", () => {
+  const [position] = buildWith(
+    { kind: "futures", symbol: "SI-12.23", maturity_date: "2023-12-28", last_price: null },
+    [tx({ type: "BUY", ts: "2023-09-01", quantity: 5, price: 90_000 })],
+  );
+
+  assert.equal(position.anomaly, "expired-derivative");
+  assert.equal(position.marketValue, 0);
+  assert.equal(position.costBasis, 0);
+});
+
+test("income and realised profit survive exclusion", () => {
+  // Excluding a holding from value must not erase money that actually moved.
+  const [position] = buildWith({ kind: "futures", symbol: "USDRUBF", last_price: null }, [
+    tx({ type: "BUY", ts: "2025-01-10", quantity: 10, price: 100 }),
+    tx({ type: "SELL", ts: "2025-02-10", quantity: 4, price: 150 }),
+  ]);
+
+  assert.equal(position.anomaly, "derivative");
+  assert.equal(position.marketValue, 0);
+  assert.equal(position.realizedPnl, 200);
+});

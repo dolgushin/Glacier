@@ -1,4 +1,5 @@
 import type { DatabaseSync } from "node:sqlite";
+import { derivativeKind, expiryFromSymbol } from "@/lib/brokers/derivatives";
 
 /**
  * Schema evolution for databases created by an earlier version.
@@ -91,6 +92,32 @@ function migrateBrokerAccounts(db: DatabaseSync): void {
   db.exec("ALTER TABLE broker_accounts RENAME TO broker_accounts_v1_backup");
 }
 
+/**
+ * Reclassify FORTS contracts that were imported as shares.
+ *
+ * Until the adapters learned to recognise a derivative, every futures and
+ * option contract landed in the catalog as `kind = 'share'` with board TQBR.
+ * That sent the quote fetcher to a market where they do not exist, so they sat
+ * in portfolios as open positions with no price forever. Re-running the
+ * classifier over the stored catalog is enough — the ledger itself is correct.
+ */
+function reclassifyDerivatives(db: DatabaseSync): void {
+  const rows = db
+    .prepare("SELECT id, symbol, board, kind FROM instruments WHERE kind IN ('share','custom')")
+    .all() as { id: number; symbol: string; board: string | null; kind: string }[];
+
+  const update = db.prepare(
+    "UPDATE instruments SET kind = ?, board = '', source_id = '', maturity_date = ? WHERE id = ?",
+  );
+
+  for (const row of rows) {
+    const kind = derivativeKind(row.symbol, row.board ?? "");
+    if (!kind) continue;
+    update.run(kind, expiryFromSymbol(row.symbol), row.id);
+  }
+}
+
 export function runMigrations(db: DatabaseSync): void {
   migrateBrokerAccounts(db);
+  reclassifyDerivatives(db);
 }

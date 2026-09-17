@@ -7,6 +7,7 @@ import { money, percent, pnlClass, signedMoney } from "@/lib/format";
 import { Empty, Metric, Section, Table, Td, Th } from "@/components/ui";
 import { PortfolioSwitcher } from "@/components/portfolio-switcher";
 import { AssetsTable, type AssetRow } from "./table";
+import { ExcludedNotice } from "./excluded";
 
 export const dynamic = "force-dynamic";
 
@@ -60,10 +61,13 @@ export default async function AssetsPage({
       trailingYield: metrics.trailingYield,
       dayChange: dayChange.byInstrument.get(position.instrument.id) ?? null,
       isOpen: position.quantity > 0,
+      anomaly: position.anomaly,
+      excludedValue: position.excludedValue * rate,
     };
   });
 
-  const openCount = rows.filter((row) => row.isOpen).length;
+  const openCount = rows.filter((row) => row.isOpen && row.anomaly === null).length;
+  const excluded = rows.filter((row) => row.anomaly !== null);
   const trailingIncome = rows.reduce(
     (sum, row) => sum + (row.trailingYield !== null ? row.trailingYield * row.marketValue : 0),
     0,
@@ -102,6 +106,12 @@ export default async function AssetsPage({
           }
         />
       </div>
+
+      {excluded.length > 0 && (
+        <div className="mt-4">
+          <ExcludedNotice rows={excluded} baseCurrency={baseCurrency} />
+        </div>
+      )}
 
       <div className="mt-4">
         <Section

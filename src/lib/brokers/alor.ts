@@ -8,7 +8,8 @@ import {
   type RemoteAccount,
   type RemoteBalance,
 } from "@/lib/brokers/types";
-import type { InstrumentKind } from "@/lib/types";
+import { derivativeKind, expiryFromSymbol } from "@/lib/brokers/derivatives";
+import { isDerivative, type InstrumentKind } from "@/lib/types";
 
 /**
  * Алор — Alor OpenAPI v2.
@@ -125,24 +126,35 @@ async function listAccounts(credentials: Credentials): Promise<RemoteAccount[]> 
 // ------------------------------------------------------------ catalogue
 
 /** MOEX board code -> instrument kind. */
-export function kindFromBoard(board: string): InstrumentKind {
+export function kindFromBoard(board: string, symbol = ""): InstrumentKind {
   const code = (board || "").toUpperCase();
   if (/^(TQCB|TQOB|TQIR|TQRD|TQUD|EQOB|EQQI|PSOB)/.test(code)) return "bond";
   if (/^(TQTF|TQIF|TQBF)/.test(code)) return "etf";
   if (/^(TQBR|TQPI|SMAL|TQDE|EQNE)/.test(code)) return "share";
+
+  // Alor's trade feed frequently omits the board, so the ticker is the only
+  // evidence left that this is a FORTS contract rather than a share.
+  const derivative = derivativeKind(symbol, board);
+  if (derivative) return derivative;
+
   return "share";
 }
 
 function describe(symbol: string, board: string, name?: string): InstrumentDescriptor {
-  const kind = kindFromBoard(board);
+  const kind = kindFromBoard(board, symbol);
+  // A derivative has no stock-market board; inventing TQBR for it would send the
+  // quote fetcher to a market where the contract does not exist.
+  const fallbackBoard = kind === "bond" ? "TQCB" : "TQBR";
+  const resolved = board || (isDerivative(kind) ? "" : fallbackBoard);
   return {
     source: "moex",
     symbol: symbol.toUpperCase(),
     name: name || symbol.toUpperCase(),
     kind,
     currency: "RUB",
-    board: board || (kind === "bond" ? "TQCB" : "TQBR"),
-    sourceId: board || (kind === "bond" ? "TQCB" : "TQBR"),
+    board: resolved,
+    sourceId: resolved,
+    maturityDate: isDerivative(kind) ? expiryFromSymbol(symbol) : null,
   };
 }
 

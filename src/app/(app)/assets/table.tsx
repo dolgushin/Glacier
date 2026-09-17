@@ -12,6 +12,14 @@ import {
   signedMoney,
   signedPercent,
 } from "@/lib/format";
+import type { PositionAnomaly } from "@/lib/domain/positions";
+
+/** Short badge next to the ticker; the block above the table carries the why. */
+const ANOMALY_TAGS: Record<PositionAnomaly, string> = {
+  "suspect-split": "нужен сплит",
+  "expired-derivative": "истёк",
+  derivative: "не в стоимости",
+};
 
 /**
  * Everything numeric is computed on the server; this component only decides
@@ -46,6 +54,10 @@ export interface AssetRow {
   yieldOnCost: number | null;
   trailingYield: number | null;
   isOpen: boolean;
+  /** Set when the holding is left out of portfolio value; see ExcludedNotice. */
+  anomaly: PositionAnomaly | null;
+  /** What the holding would have been worth had it been counted. */
+  excludedValue: number;
 }
 
 type SortKey =
@@ -196,6 +208,11 @@ export function AssetsTable({
                     <span className="code text-[13px] font-medium text-ink">{row.symbol}</span>
                     <Tag>{row.kindLabel}</Tag>
                     {!row.isOpen && <Tag tone="neutral">продана</Tag>}
+                    {row.anomaly !== null && (
+                      <Tag tone={row.anomaly === "suspect-split" ? "bad" : "neutral"}>
+                        {ANOMALY_TAGS[row.anomaly]}
+                      </Tag>
+                    )}
                   </div>
                   <div className="max-w-[230px] truncate text-xs text-ink-mute">{row.name}</div>
                   <div className="text-[11px] text-ink-faint">
