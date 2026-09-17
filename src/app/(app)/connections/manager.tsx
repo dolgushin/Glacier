@@ -18,6 +18,7 @@ import { dateTime, relativeTime } from "@/lib/format";
 import type { RemoteAccount } from "@/lib/brokers/types";
 import type { BrokerInfo } from "@/lib/brokers/registry";
 import type { ConnectionView } from "@/lib/brokers/engine";
+import { ReconcilePanel } from "./reconcile";
 
 const initial: BrokerState = {};
 
@@ -605,6 +606,10 @@ function LinkRowView({ link }: { link: ConnectionView["links"][number] }) {
           <Feedback state={syncState} />
         </div>
       )}
+
+      <div className="mt-3 border-t border-rule pt-3">
+        <ReconcilePanel linkId={link.id} />
+      </div>
     </div>
   );
 }

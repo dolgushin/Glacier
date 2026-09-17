@@ -4,11 +4,16 @@ import {
   addTransactionsBulk,
   createPortfolio,
   findInstrument,
+  getInstrument,
+  listTransactions,
   requirePortfolio,
   upsertInstrument,
   type NewTransaction,
 } from "@/lib/repo";
+import { buildPositions } from "@/lib/domain/positions";
+import { latestFxRates } from "@/lib/sync";
 import { searchCrypto } from "@/lib/providers/coingecko";
+import type { Instrument } from "@/lib/types";
 import { requireAdapter } from "@/lib/brokers/registry";
 import {
   BrokerError,
@@ -528,6 +533,157 @@ export async function syncLink(
     );
     throw error;
   }
+}
+
+// ----------------------------------------------------- reconciliation
+
+export interface ReconcileRow {
+  symbol: string;
+  name: string;
+  /** Units the broker reports holding. */
+  brokerQuantity: number | null;
+  /** Units our ledger derives. */
+  ledgerQuantity: number | null;
+  /** brokerQuantity - ledgerQuantity, in units. */
+  difference: number;
+  /** Difference valued at the last known price, in the instrument currency. */
+  valueGap: number | null;
+  currency: string;
+  status: "match" | "differs" | "missing-here" | "extra-here";
+}
+
+export interface Reconciliation {
+  rows: ReconcileRow[];
+  /** Total money the broker holds that our ledger does not know about. */
+  unaccountedValue: number;
+  checkedAt: string;
+  accountName: string;
+  portfolioName: string;
+}
+
+/**
+ * Compare what the broker says it holds against what our ledger derives.
+ *
+ * This exists because "why does the app show less than my broker app" is
+ * otherwise unanswerable without a database console. The usual cause is a
+ * truncated import: holdings bought before the first synced date have no BUY in
+ * the ledger, so they are invisible here while the broker still counts them —
+ * and sales of those holdings book as pure profit, inflating the return.
+ *
+ * Quantities are the honest thing to compare. Prices come from our own cache on
+ * both sides, so a difference here always means a missing or extra operation,
+ * never a stale quote.
+ */
+export async function reconcile(userId: number, linkId: number): Promise<Reconciliation> {
+  const { link, connection } = requireLink(userId, linkId);
+  const adapter = requireAdapter(connection.broker);
+
+  if (!adapter.fetchBalances) {
+    throw new BrokerError(`${adapter.name} не отдаёт текущие остатки — сверка недоступна`);
+  }
+
+  const balances = await adapter.fetchBalances(
+    decodeCredentials(connection.credentials_enc),
+    link.remote_account_id,
+  );
+
+  const portfolio = get<{ name: string; base_currency: string }>(
+    "SELECT name, base_currency FROM portfolios WHERE id = ?",
+    link.portfolio_id,
+  );
+
+  // Ledger side: positions derived from this portfolio's transactions alone.
+  const transactions = listTransactions(userId, { portfolioId: link.portfolio_id });
+  const instrumentRows = all<Instrument>(
+    `SELECT DISTINCT i.* FROM instruments i
+       JOIN transactions t ON t.instrument_id = i.id
+      WHERE t.portfolio_id = ?`,
+    link.portfolio_id,
+  );
+  const positions = buildPositions({
+    transactions,
+    instruments: new Map(instrumentRows.map((i) => [i.id, i])),
+    fxRates: latestFxRates(),
+    baseCurrency: portfolio?.base_currency ?? "RUB",
+  });
+
+  const ledgerBySymbol = new Map(
+    positions.filter((p) => p.quantity > 0).map((p) => [p.instrument.symbol.toUpperCase(), p]),
+  );
+
+  const cache = new Map<string, number | null>();
+  const rows: ReconcileRow[] = [];
+  const seen = new Set<string>();
+  let unaccountedValue = 0;
+
+  for (const balance of balances) {
+    const symbol = balance.instrument.symbol.toUpperCase();
+    seen.add(symbol);
+
+    const position = ledgerBySymbol.get(symbol);
+    const ledgerQuantity = position?.quantity ?? null;
+    const difference = balance.quantity - (ledgerQuantity ?? 0);
+
+    // Price the gap with whatever we know; resolve the catalog entry so a
+    // holding we have never seen still gets a name and a quote.
+    let price = position?.lastPrice ?? null;
+    let name = position?.instrument.name ?? balance.instrument.name;
+    let currency = position?.currency ?? balance.instrument.currency;
+    if (price === null) {
+      const id = await resolveInstrument(balance.instrument, cache);
+      const instrument = id === null ? undefined : getInstrument(id);
+      price = instrument?.last_price ?? null;
+      name = instrument?.name ?? name;
+      currency = instrument?.currency ?? currency;
+    }
+
+    const valueGap = price === null ? null : difference * price;
+    if (valueGap !== null && difference > 0) unaccountedValue += valueGap;
+
+    rows.push({
+      symbol,
+      name,
+      brokerQuantity: balance.quantity,
+      ledgerQuantity,
+      difference,
+      valueGap,
+      currency,
+      status:
+        ledgerQuantity === null
+          ? "missing-here"
+          : Math.abs(difference) < 1e-9
+            ? "match"
+            : "differs",
+    });
+  }
+
+  // Anything we hold that the broker does not report back.
+  for (const [symbol, position] of ledgerBySymbol) {
+    if (seen.has(symbol)) continue;
+    rows.push({
+      symbol,
+      name: position.instrument.name,
+      brokerQuantity: null,
+      ledgerQuantity: position.quantity,
+      difference: -position.quantity,
+      valueGap: position.lastPrice === null ? null : -position.quantity * position.lastPrice,
+      currency: position.currency,
+      status: "extra-here",
+    });
+  }
+
+  const order = { "missing-here": 0, differs: 1, "extra-here": 2, match: 3 } as const;
+  rows.sort(
+    (a, b) => order[a.status] - order[b.status] || Math.abs(b.valueGap ?? 0) - Math.abs(a.valueGap ?? 0),
+  );
+
+  return {
+    rows,
+    unaccountedValue,
+    checkedAt: nowIso(),
+    accountName: link.remote_account_name || link.remote_account_id,
+    portfolioName: portfolio?.name ?? "",
+  };
 }
 
 /** Sync every mapping the user has enabled. Failures are collected, not thrown. */

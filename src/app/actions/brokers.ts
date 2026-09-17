@@ -7,6 +7,8 @@ import { refreshQuotes } from "@/lib/sync";
 import { requireAdapter } from "@/lib/brokers/registry";
 import {
   deleteConnection,
+  reconcile,
+  type Reconciliation,
   linkAccount,
   probeCredentials,
   refreshAccounts,
@@ -247,6 +249,41 @@ export async function syncAllAction(_previous: BrokerState): Promise<BrokerState
     success: `Синхронизировано счетов: ${results.length}, новых операций: ${inserted}`,
     hint: errors.length > 0 ? `Ошибки: ${errors.join("; ")}` : undefined,
   };
+}
+
+/**
+ * Compare the broker's own holdings against what our ledger derives.
+ *
+ * Answers "why does this show less than my broker app" with a per-instrument
+ * list instead of a guess. The usual culprit is a truncated import: anything
+ * bought before the first synced date has no BUY in the ledger, so it is
+ * invisible here while the broker still counts it.
+ */
+export async function reconcileAction(
+  _previous: BrokerState & { reconciliation?: Reconciliation },
+  data: FormData,
+): Promise<BrokerState & { reconciliation?: Reconciliation }> {
+  const user = await requireUser();
+  try {
+    const reconciliation = await reconcile(user.id, Number(data.get("linkId")));
+    const problems = reconciliation.rows.filter((row) => row.status !== "match").length;
+
+    return {
+      success:
+        problems === 0
+          ? `«${reconciliation.accountName}»: всё сходится, расхождений нет`
+          : `«${reconciliation.accountName}»: расхождений — ${problems}`,
+      hint:
+        reconciliation.unaccountedValue > 0
+          ? "Позиции, которых нет в журнале, обычно означают усечённую историю: бумаги, купленные " +
+            "до первой синхронизации, брокер считает, а у нас на них нет операции покупки. " +
+            "Запустите «Полная» — она перечитывает максимальную доступную историю."
+          : undefined,
+      reconciliation,
+    };
+  } catch (error) {
+    return toState(error);
+  }
 }
 
 /** Portfolio list for the mapping selectors. */
