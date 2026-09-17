@@ -46,6 +46,7 @@ export function CreatePortfolio() {
 
 export function PortfolioRow({
   portfolio,
+  broker,
   value,
   positions,
   operations,
@@ -53,6 +54,8 @@ export function PortfolioRow({
   createdAt,
 }: {
   portfolio: Portfolio;
+  /** Resolved upstream from the live broker link, not from the stored column. */
+  broker: string;
   value: number;
   positions: number;
   operations: number;
@@ -92,7 +95,7 @@ export function PortfolioRow({
         {renameState.error && <p className="text-[11px] text-loss">{renameState.error}</p>}
       </Td>
 
-      <Td className="text-xs text-ink-mute">{portfolio.broker || "—"}</Td>
+      <Td className="text-xs text-ink-mute">{broker}</Td>
 
       <Td align="right" className="tnum font-medium">
         {money(value, portfolio.base_currency)}

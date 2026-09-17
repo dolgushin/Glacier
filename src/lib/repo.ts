@@ -390,3 +390,29 @@ export function deleteTransaction(userId: number, transactionId: number): void {
 export function netCash(transactions: Transaction[]): number {
   return transactions.reduce((sum, item) => sum + cashEffect(item) * item.fx_rate, 0);
 }
+
+/**
+ * Which broker actually feeds each portfolio, keyed by portfolio id.
+ *
+ * Derived from the live links rather than from the free-text `broker` column on
+ * the portfolio: that column is filled in only when linking creates a portfolio,
+ * so a portfolio made by hand and linked afterwards stayed blank forever. A
+ * portfolio can be fed by more than one account, hence the list.
+ */
+export function brokersByPortfolio(userId: number): Map<number, string[]> {
+  const rows = all<{ portfolio_id: number; broker: string }>(
+    `SELECT DISTINCT l.portfolio_id, c.broker
+       FROM broker_links l
+       JOIN broker_connections c ON c.id = l.connection_id
+      WHERE c.user_id = ?`,
+    userId,
+  );
+
+  const map = new Map<number, string[]>();
+  for (const row of rows) {
+    const list = map.get(row.portfolio_id);
+    if (list) list.push(row.broker);
+    else map.set(row.portfolio_id, [row.broker]);
+  }
+  return map;
+}

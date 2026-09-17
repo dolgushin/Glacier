@@ -21,7 +21,17 @@ export interface Summary {
   costBasis: number;
   /** Free cash derived from the ledger, in base currency. */
   cash: number;
-  /** marketValue + cash. */
+  /**
+   * Whether `cash` is a balance at all.
+   *
+   * Cash is derived by summing what every operation did to the account. That
+   * only yields a balance when the ledger also knows the money coming in: with
+   * trades alone the sum is just what the purchases consumed, and it runs
+   * deeply negative. Alor and the crypto exchanges report exactly that — trades
+   * and nothing else.
+   */
+  cashKnown: boolean;
+  /** marketValue, plus cash when there is a real balance to add. */
   totalValue: number;
   /** Net money the investor has put in (deposits - withdrawals). */
   netDeposits: number;
@@ -115,6 +125,14 @@ export function summarize({
   let cash = 0;
   for (const [currency, value] of cashByCurrency) cash += value * rateFor(currency);
 
+  // Without a single funding operation the ledger never saw the money that paid
+  // for the purchases, so the running total is not a balance — it is the cost of
+  // everything bought, carried with a minus. Adding it to the holdings would
+  // subtract the portfolio from itself.
+  const cashKnown = transactions.some(
+    (tx) => tx.type === "DEPOSIT" || tx.type === "WITHDRAWAL",
+  );
+
   let netDeposits = 0;
   for (const tx of transactions) {
     if (tx.type === "DEPOSIT") netDeposits += tx.amount * tx.fx_rate;
@@ -140,7 +158,8 @@ export function summarize({
     marketValue,
     costBasis,
     cash,
-    totalValue: marketValue + cash,
+    cashKnown,
+    totalValue: marketValue + (cashKnown ? cash : 0),
     netDeposits,
     realizedPnl,
     unrealizedPnl,
@@ -151,7 +170,12 @@ export function summarize({
     xirr: xirr(flows),
     simpleReturn: simpleReturn(costBasis > 0 ? costBasis : Math.abs(netDeposits), totalPnl),
     positions,
-    openPositions: positions.filter((position) => position.quantity > 0),
+    // Held, priced, and counted in the value above. A contract that expired
+    // three years ago still has a quantity, but calling it an open position
+    // makes the count disagree with the money beside it.
+    openPositions: positions.filter(
+      (position) => position.quantity > 0 && position.anomaly === null,
+    ),
     cashByCurrency,
   };
 }

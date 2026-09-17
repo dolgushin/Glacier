@@ -171,9 +171,17 @@ export default async function DashboardPage({
           <Metric label="Вложено" value={money(summary.costBasis, baseCurrency)} hint="себестоимость позиций" />
           <Metric
             label="Свободные деньги"
-            value={money(summary.cash, baseCurrency)}
-            tone={summary.cash < 0 ? "bad" : "neutral"}
-            hint={summary.cash < 0 ? "не хватает пополнений" : "остаток по журналу"}
+            // Without funding operations there is no balance to show: the sum
+            // would be the cost of the purchases with a minus in front of it.
+            value={summary.cashKnown ? money(summary.cash, baseCurrency) : "неизвестны"}
+            tone={summary.cashKnown && summary.cash < 0 ? "bad" : "neutral"}
+            hint={
+              !summary.cashKnown
+                ? "брокер отдаёт только сделки, без пополнений"
+                : summary.cash < 0
+                  ? "не хватает пополнений"
+                  : "остаток по журналу"
+            }
           />
         </dl>
       </div>
