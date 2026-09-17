@@ -8,6 +8,7 @@ import { requireAdapter } from "@/lib/brokers/registry";
 import {
   deleteConnection,
   reconcile,
+  importOpeningPositions,
   type Reconciliation,
   linkAccount,
   probeCredentials,
@@ -280,6 +281,52 @@ export async function reconcileAction(
             "Запустите «Полная» — она перечитывает максимальную доступную историю."
           : undefined,
       reconciliation,
+    };
+  } catch (error) {
+    return toState(error);
+  }
+}
+
+/**
+ * Write the missing holdings into the ledger as opening purchases.
+ *
+ * Kept separate from reconciliation on purpose: seeing the gap and changing the
+ * ledger are different decisions, and the second one should be deliberate.
+ */
+export async function importOpeningAction(
+  _previous: BrokerState,
+  data: FormData,
+): Promise<BrokerState> {
+  const user = await requireUser();
+  try {
+    const result = await importOpeningPositions(user.id, Number(data.get("linkId")));
+    await refreshQuotes();
+
+    revalidatePath("/connections");
+    revalidatePath("/dashboard");
+    revalidatePath("/assets");
+    revalidatePath("/transactions");
+
+    if (result.created === 0) {
+      return { success: "Добавлять нечего — недостающих позиций не найдено" };
+    }
+
+    const cost = Math.round(result.totalCost).toLocaleString("ru-RU");
+    const priceNote =
+      result.atAveragePrice > 0
+        ? `Средняя цена брокера использована для ${result.atAveragePrice} из ${result.created}. `
+        : "Цены взяты текущие, средней брокер не отдаёт. ";
+    const skippedNote =
+      result.skipped > 0 ? `Пропущено без цены или справочника: ${result.skipped}. ` : "";
+
+    return {
+      success: `Добавлено стартовых позиций: ${result.created} на ${cost} ₽`,
+      hint:
+        `Дата покупки проставлена ${result.datedAt} — настоящую брокер не отдаёт. ` +
+        `Стоимость портфеля и доли теперь верны, доходность по этим бумагам приблизительная. ` +
+        priceNote +
+        skippedNote +
+        "Все записи помечены «Стартовая позиция» — их видно в журнале сделок и можно исправить.",
     };
   } catch (error) {
     return toState(error);

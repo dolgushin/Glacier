@@ -263,7 +263,7 @@ async function fetchBalances(
   if (!token) throw new BrokerError("Не указан токен");
 
   const payload = await call<{
-    positions?: { figi?: string; quantity?: MoneyValue }[];
+    positions?: { figi?: string; quantity?: MoneyValue; averagePositionPrice?: MoneyValue }[];
   }>("OperationsService", "GetPortfolio", token, { accountId });
 
   const balances: RemoteBalance[] = [];
@@ -271,7 +271,10 @@ async function fetchBalances(
     const quantity = toNumber(position.quantity);
     if (!position.figi || quantity === 0) continue;
     const instrument = await describeInstrument(token, position.figi);
-    if (instrument) balances.push({ instrument, quantity });
+    if (!instrument) continue;
+    // A MoneyValue carries its own currency, so this is money, not a percentage.
+    const averagePrice = position.averagePositionPrice ? toNumber(position.averagePositionPrice) : null;
+    balances.push({ instrument, quantity, averagePrice: averagePrice || null });
   }
   return balances;
 }

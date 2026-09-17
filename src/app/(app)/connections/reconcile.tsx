@@ -1,7 +1,7 @@
 "use client";
 
 import { useActionState } from "react";
-import { reconcileAction, type BrokerState } from "@/app/actions/brokers";
+import { importOpeningAction, reconcileAction, type BrokerState } from "@/app/actions/brokers";
 import { Notice, Table, Tag, Td, Th } from "@/components/ui";
 import { money, number, pnlClass } from "@/lib/format";
 import type { Reconciliation } from "@/lib/brokers/engine";
@@ -24,7 +24,9 @@ const STATUS: Record<string, { label: string; tone: "good" | "bad" | "warn" | "n
  */
 export function ReconcilePanel({ linkId }: { linkId: number }) {
   const [state, action, pending] = useActionState(reconcileAction, initial);
+  const [importState, importAction, importing] = useActionState(importOpeningAction, initial);
   const result = state.reconciliation;
+  const missing = result?.rows.filter((row) => row.status === "missing-here").length ?? 0;
 
   return (
     <div>
@@ -57,13 +59,61 @@ export function ReconcilePanel({ linkId }: { linkId: number }) {
           </Notice>
 
           {result.unaccountedValue > 0 && (
-            <p className="mt-3 text-sm text-ink-soft">
-              У брокера есть бумаг на{" "}
-              <span className="tnum font-semibold text-ink">
-                {money(result.unaccountedValue, "RUB")}
-              </span>
-              , которых журнал не знает. Примерно на эту сумму наша оценка портфеля и занижена.
-            </p>
+            <div className="mt-3 rounded-md border border-rule bg-sunk p-4">
+              <p className="text-sm text-ink-soft">
+                У брокера есть бумаг на{" "}
+                <span className="tnum font-semibold text-ink">
+                  {money(result.unaccountedValue, "RUB")}
+                </span>
+                , которых журнал не знает. Примерно на эту сумму наша оценка портфеля и занижена.
+              </p>
+
+              {missing > 0 && (
+                <form
+                  action={importAction}
+                  className="mt-3"
+                  onSubmit={(event) => {
+                    if (
+                      !confirm(
+                        `Добавить ${missing} стартовых позиций в журнал?\n\n` +
+                          "Количество и себестоимость будут верными, но дату покупки брокер не " +
+                          "отдаёт — она будет проставлена концом известной истории, поэтому " +
+                          "доходность по этим бумагам останется приблизительной.\n\n" +
+                          "Записи помечаются «Стартовая позиция», их можно найти и удалить в журнале сделок.",
+                      )
+                    ) {
+                      event.preventDefault();
+                    }
+                  }}
+                >
+                  <input type="hidden" name="linkId" value={linkId} />
+                  <button
+                    type="submit"
+                    disabled={importing}
+                    className="rounded-md bg-accent px-4 py-2 text-[13px] font-semibold text-white transition-colors hover:bg-accent-ink disabled:bg-rule-mid"
+                  >
+                    {importing
+                      ? "Добавляю…"
+                      : `Добавить ${missing} недостающих позиций в журнал`}
+                  </button>
+                  <p className="mt-2 text-xs text-ink-mute">
+                    Сначала попробуйте «Полная» — если брокер отдаёт настоящую историю, она лучше
+                    восстановленной.
+                  </p>
+                </form>
+              )}
+            </div>
+          )}
+
+          {(importState.error || importState.success) && (
+            <div className="mt-3">
+              <Notice tone={importState.error ? "error" : "success"}>
+                <div>{importState.error ?? importState.success}</div>
+                {importState.hint && (
+                  <div className="mt-1.5 text-xs leading-relaxed opacity-90">{importState.hint}</div>
+                )}
+              </Notice>
+            </div>
           )}
 
           <div className="mt-3">

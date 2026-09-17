@@ -76,6 +76,12 @@ export interface LedgerOperation {
 export interface RemoteBalance {
   instrument: InstrumentDescriptor;
   quantity: number;
+  /**
+   * Average purchase price per unit, in money, when the broker reports it
+   * unambiguously. Left null where the units are uncertain — a bond quoted in
+   * percent of face value would be wrong by a factor of ten.
+   */
+  averagePrice?: number | null;
 }
 
 export class BrokerError extends Error {

@@ -20,6 +20,7 @@ import {
   type Credentials,
   type InstrumentDescriptor,
   type RemoteAccount,
+  type RemoteBalance,
 } from "@/lib/brokers/types";
 
 /**
@@ -554,6 +555,8 @@ export interface ReconcileRow {
 
 export interface Reconciliation {
   rows: ReconcileRow[];
+  /** Raw broker balances by symbol, so an import can reuse the average price. */
+  balances: Map<string, RemoteBalance>;
   /** Total money the broker holds that our ledger does not know about. */
   unaccountedValue: number;
   checkedAt: string;
@@ -613,12 +616,14 @@ export async function reconcile(userId: number, linkId: number): Promise<Reconci
 
   const cache = new Map<string, number | null>();
   const rows: ReconcileRow[] = [];
+  const bySymbol = new Map<string, RemoteBalance>();
   const seen = new Set<string>();
   let unaccountedValue = 0;
 
   for (const balance of balances) {
     const symbol = balance.instrument.symbol.toUpperCase();
     seen.add(symbol);
+    bySymbol.set(symbol, balance);
 
     const position = ledgerBySymbol.get(symbol);
     const ledgerQuantity = position?.quantity ?? null;
@@ -679,10 +684,114 @@ export async function reconcile(userId: number, linkId: number): Promise<Reconci
 
   return {
     rows,
+    balances: bySymbol,
     unaccountedValue,
     checkedAt: nowIso(),
     accountName: link.remote_account_name || link.remote_account_id,
     portfolioName: portfolio?.name ?? "",
+  };
+}
+
+export interface OpeningImport {
+  created: number;
+  /** How many used the broker's own average price rather than today's quote. */
+  atAveragePrice: number;
+  /** Date the synthetic purchases were dated to. */
+  datedAt: string;
+  totalCost: number;
+  skipped: number;
+}
+
+/**
+ * Write the holdings the broker reports but the ledger never saw, as opening
+ * purchases.
+ *
+ * Adding sixty of them by hand is not a real option, and leaving them out keeps
+ * both the portfolio value and the return wrong. What this cannot recover is
+ * *when* they were bought: the broker's API does not go back that far, which is
+ * why they are missing in the first place. So the quantity and the cost are
+ * right, the date is a stated approximation, and every row is tagged so it can
+ * be found, corrected or removed later.
+ *
+ * Only the difference is written, never the full balance — a partially imported
+ * position must not be counted twice. The external id makes a repeat run a no-op.
+ */
+export async function importOpeningPositions(
+  userId: number,
+  linkId: number,
+): Promise<OpeningImport> {
+  const { link, connection } = requireLink(userId, linkId);
+  const reconciliation = await reconcile(userId, linkId);
+
+  // Date them just before the earliest operation we do know about, so FIFO
+  // matches later sales against these lots rather than leaving them unmatched.
+  const earliest = get<{ ts: string }>(
+    "SELECT MIN(ts) AS ts FROM transactions WHERE portfolio_id = ?",
+    link.portfolio_id,
+  )?.ts;
+  const datedAt = earliest
+    ? new Date(Date.parse(earliest) - 86_400_000).toISOString()
+    : new Date(Date.now() - 86_400_000).toISOString();
+
+  const cache = new Map<string, number | null>();
+  const rows: NewTransaction[] = [];
+  let atAveragePrice = 0;
+  let totalCost = 0;
+  let skipped = 0;
+
+  for (const row of reconciliation.rows) {
+    if (row.difference <= 1e-9) continue; // nothing missing, or we hold more
+
+    const balance = reconciliation.balances.get(row.symbol);
+    const instrumentId = balance ? await resolveInstrument(balance.instrument, cache) : null;
+    if (instrumentId === null) {
+      skipped++;
+      continue;
+    }
+
+    const instrument = getInstrument(instrumentId);
+    const price = balance?.averagePrice ?? instrument?.last_price ?? null;
+    if (price === null || !(price > 0)) {
+      skipped++;
+      continue;
+    }
+    if (balance?.averagePrice) atAveragePrice++;
+
+    totalCost += row.difference * price;
+    rows.push({
+      portfolioId: link.portfolio_id,
+      instrumentId,
+      type: "BUY",
+      ts: datedAt,
+      quantity: row.difference,
+      price,
+      amount: row.difference * price,
+      currency: instrument?.currency ?? row.currency,
+      note: balance?.averagePrice
+        ? "Стартовая позиция из сверки, средняя цена брокера"
+        : "Стартовая позиция из сверки, цена текущая — себестоимость приблизительная",
+      source: `${connection.broker}:${connection.id}`,
+      // Namespaced so a second run updates nothing and creates nothing.
+      externalId: `opening:${row.symbol}`,
+    });
+  }
+
+  const written = addTransactionsBulk(userId, rows);
+
+  run(
+    "INSERT INTO sync_log (user_id, kind, status, detail, started_at, finished_at) VALUES (?, 'broker', 'ok', ?, ?, ?)",
+    userId,
+    `Стартовые позиции: ${written.inserted} шт на ${Math.round(totalCost)}`,
+    nowIso(),
+    nowIso(),
+  );
+
+  return {
+    created: written.inserted,
+    atAveragePrice,
+    datedAt: datedAt.slice(0, 10),
+    totalCost,
+    skipped,
   };
 }
 
