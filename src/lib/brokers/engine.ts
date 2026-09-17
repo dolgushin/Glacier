@@ -820,3 +820,36 @@ export async function syncAll(
 
   return { results, errors };
 }
+
+/**
+ * Sync every enabled mapping of every user.
+ *
+ * The scheduler's entry point: it must not need a session, so it walks the
+ * users who have something to sync rather than waiting for a request. The
+ * per-link `auto_sync` flag stays the single switch — a user turns it off and
+ * the scheduler never touches that account again.
+ */
+export async function syncAllUsers(): Promise<{
+  users: number;
+  results: SyncOutcome[];
+  errors: string[];
+}> {
+  const userIds = all<{ user_id: number }>(
+    `SELECT DISTINCT c.user_id
+       FROM broker_connections c
+       JOIN broker_links l ON l.connection_id = c.id
+      WHERE l.auto_sync = 1
+      ORDER BY c.user_id`,
+  );
+
+  const results: SyncOutcome[] = [];
+  const errors: string[] = [];
+
+  for (const { user_id: userId } of userIds) {
+    const outcome = await syncAll(userId);
+    results.push(...outcome.results);
+    errors.push(...outcome.errors);
+  }
+
+  return { users: userIds.length, results, errors };
+}

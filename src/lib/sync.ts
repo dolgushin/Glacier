@@ -11,7 +11,7 @@ import { isDerivative, type Instrument } from "@/lib/types";
  * value stays in place and the UI shows how stale it is.
  */
 
-function logSync(kind: string, status: "ok" | "error", detail: string, startedAt: string) {
+export function logSync(kind: string, status: "ok" | "error", detail: string, startedAt: string) {
   run(
     "INSERT INTO sync_log (kind, status, detail, started_at, finished_at) VALUES (?, ?, ?, ?, ?)",
     kind,
