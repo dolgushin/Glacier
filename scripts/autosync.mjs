@@ -25,7 +25,10 @@ if (!env.NODE_EXTRA_CA_CERTS && existsSync(configured)) {
 
 const child = spawn(
   process.execPath,
-  ["--import", "./scripts/register-alias.mjs", "scripts/autosync-worker.ts", ...process.argv.slice(2)],
+  // --experimental-strip-types is inert where type stripping is already on by
+  // default (Node 22.18+/24), but the image's Node 22 may be older.
+  ["--experimental-strip-types", "--import", "./scripts/register-alias.mjs",
+   "scripts/autosync-worker.ts", ...process.argv.slice(2)],
   { stdio: "inherit", env },
 );
 

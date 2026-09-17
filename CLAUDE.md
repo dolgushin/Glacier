@@ -41,9 +41,11 @@ Node 22+ обязателен: на нём держится `node:sqlite`.
 **`NODE_EXTRA_CA_CERTS` нельзя задать через `.env`** — переменная читается при старте
 процесса, а Next загружает `.env` позже. Запуск идёт через `scripts/with-ca.mjs`.
 
-**Автосинхронизация — отдельный процесс, не часть Next.** `npm run sync:watch` (цикл) или
-`POST /api/cron/sync` с `GLACIER_CRON_SECRET` (внешний cron). Оба вызывают `runSyncRound()` из
-`src/lib/brokers/scheduler.ts`; флаг `auto_sync` на привязке — единственный переключатель.
+**Автосинхронизация — отдельный процесс, не часть Next.** В Docker это сервис `glacier-sync`
+в `docker-compose.yml` (один образ, одна SQLite — WAL и busy_timeout делают это безопасным),
+вне Docker — `npm run sync:watch` или `POST /api/cron/sync` с `GLACIER_CRON_SECRET`. Всё три
+пути вызывают `runSyncRound()` из `src/lib/brokers/scheduler.ts`; флаг `auto_sync` на привязке —
+единственный переключатель.
 
 ## Оформление
 

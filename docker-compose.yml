@@ -17,6 +17,25 @@ services:
     networks:
       - proxy
 
+  # Scheduled broker sync. Same image and same database file as the web app —
+  # WAL mode and busy_timeout make two processes on one SQLite file safe. No
+  # proxy network: it only makes outbound calls to brokers. The deploy
+  # pipeline's `compose up --build --force-recreate` restarts it automatically.
+  glacier-sync:
+    image: glacier:latest
+    container_name: glacier-sync
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      - NODE_ENV=production
+      - GLACIER_DB_PATH=/app/data/glacier.db
+    volumes:
+      - ./data:/app/data
+    depends_on:
+      - glacier
+    command: ["node", "scripts/autosync.mjs"]
+
 networks:
   proxy:
     external: true
