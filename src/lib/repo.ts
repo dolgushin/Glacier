@@ -81,7 +81,7 @@ export function createCategory(
   portfolioId: number,
   name: string,
   targetWeight = 0,
-  color = "#7e8299",
+  color = "var(--chart-1)",
 ): Category {
   requirePortfolio(userId, portfolioId);
   const order = get<{ n: number }>(

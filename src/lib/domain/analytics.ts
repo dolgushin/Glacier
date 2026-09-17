@@ -42,14 +42,29 @@ export interface Summary {
 }
 
 /**
- * Category ramp, drawn from the same blue-violet-teal family as the palette.
- * Ordered so that neighbouring slices stay distinguishable rather than
- * shading into one another.
+ * Categorical ramp, as CSS variables rather than literals.
+ *
+ * Five slots is the validated maximum, not a stylistic choice. Checked with the
+ * dataviz validator in all-pairs mode — the honest test for a donut, where
+ * every slice is visible at once, so "adjacent" means all of them. The Snowball
+ * palette holds exactly five distinguishable hue families; its remaining
+ * colours duplicate the blue and the violet (ΔE 1.3 and 7.1), and an eight-slot
+ * ramp only passed the adjacent-pairs check because the near-duplicates
+ * happened to sit apart in the array.
+ *
+ * The values live in globals.css, a separate set per theme, so the charts
+ * follow the theme toggle without a second palette in JavaScript.
  */
 const PALETTE = [
-  "#3699ff", "#8950fc", "#1bc5bd", "#6930c3",
-  "#ffa800", "#f64e60", "#187de4", "#0bb7af",
+  "var(--chart-1)",
+  "var(--chart-2)",
+  "var(--chart-3)",
+  "var(--chart-4)",
+  "var(--chart-5)",
 ];
+
+/** Series past the ramp are grouped, never given an invented hue. */
+export const MAX_SERIES = PALETTE.length;
 
 export function colorFor(index: number): string {
   return PALETTE[index % PALETTE.length];
@@ -295,7 +310,7 @@ export function allocationByCategory(
       profit: 0,
     });
   }
-  buckets.set("none", { label: "Без категории", value: 0, color: "#b5b5c3", profit: 0 });
+  buckets.set("none", { label: "Без категории", value: 0, color: "var(--color-flat)", profit: 0 });
 
   for (const position of positions) {
     if (position.quantity <= 0) continue;
@@ -334,7 +349,7 @@ export function allocationByCurrency(positions: Position[]): AllocationSlice[] {
   return toSlices(buckets);
 }
 
-export function allocationByInstrument(positions: Position[], limit = 12): AllocationSlice[] {
+export function allocationByInstrument(positions: Position[], limit = MAX_SERIES): AllocationSlice[] {
   const slices = toSlices(
     new Map(
       positions
@@ -352,7 +367,7 @@ export function allocationByInstrument(positions: Position[], limit = 12): Alloc
   const tailShare = slices.slice(limit).reduce((sum, slice) => sum + slice.share, 0);
   return [
     ...head,
-    { key: "__rest", label: `Ещё ${slices.length - limit}`, value: tailValue, share: tailShare, color: "#b5b5c3" },
+    { key: "__rest", label: `Ещё ${slices.length - limit}`, value: tailValue, share: tailShare, color: "var(--color-flat)" },
   ];
 }
 

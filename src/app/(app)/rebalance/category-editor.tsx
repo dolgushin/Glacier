@@ -14,9 +14,13 @@ import type { DriftRow } from "@/lib/domain/rebalance";
 
 const initial: ActionState = {};
 
+// The validated five; a sixth category shares a colour rather than inventing one.
 const PRESET_COLORS = [
-  "#3699ff", "#8950fc", "#1bc5bd", "#6930c3",
-  "#ffa800", "#f64e60", "#187de4", "#0bb7af",
+  "var(--chart-1)",
+  "var(--chart-2)",
+  "var(--chart-3)",
+  "var(--chart-4)",
+  "var(--chart-5)",
 ];
 
 export function CategoryEditor({

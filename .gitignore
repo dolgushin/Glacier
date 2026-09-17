@@ -12,3 +12,6 @@ data/*.db-shm
 next-env.d.ts
 .DS_Store
 shots/
+
+# Artefacts from the Playwright MCP session, not project files.
+.playwright-mcp/

@@ -110,7 +110,7 @@ export default async function DashboardPage({
 
   const byCategory = allocationByCategory(summary.positions, categories);
   const byKind = allocationByKind(summary.positions);
-  const byInstrument = allocationByInstrument(summary.positions, 10);
+  const byInstrument = allocationByInstrument(summary.positions);
 
   const profitShare = summary.costBasis > 0 ? summary.totalPnl / summary.costBasis : null;
   const forwardYield = summary.marketValue > 0 ? expected / summary.marketValue : null;
