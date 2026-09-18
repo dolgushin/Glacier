@@ -2,6 +2,7 @@ import { requireUser } from "@/lib/auth";
 import { loadContext, loadPreviousCloses, resolvePortfolioId } from "@/lib/context";
 import { listPortfolios } from "@/lib/repo";
 import { computeDayChange, positionMetrics } from "@/lib/domain/analytics";
+import { decomposePnl } from "@/lib/domain/attribution";
 import { KIND_LABELS } from "@/lib/types";
 import { money, percent, pnlClass, signedMoney } from "@/lib/format";
 import { Empty, Metric, Section, Table, Td, Th } from "@/components/ui";
@@ -22,9 +23,10 @@ export default async function AssetsPage({
   const portfolios = listPortfolios(user.id);
   const portfolioId = resolvePortfolioId(portfolios, params.p);
   const context = loadContext(user.id, portfolioId);
-  const { summary, baseCurrency, categories, transactions, fxRates } = context;
+  const { summary, baseCurrency, categories, transactions, fxRates, instruments } = context;
 
   const categoryNames = new Map(categories.map((category) => [category.id, category.name]));
+  const decomposition = decomposePnl(transactions, instruments, fxRates, baseCurrency);
 
   const dayChange = computeDayChange(
     summary.positions,
@@ -106,6 +108,46 @@ export default async function AssetsPage({
           }
         />
       </div>
+
+      {decomposition.total !== 0 && (
+        <div className="mt-4 rounded-lg border border-rule bg-sunk px-4 py-3">
+          <p className="text-xs font-semibold tracking-[0.08em] text-ink-mute uppercase">
+            Из чего состоит прибыль
+          </p>
+          <div className="mt-2 flex flex-wrap gap-x-6 gap-y-1.5 text-sm">
+            <span className="text-ink-soft">
+              Цены{" "}
+              <span className={`tnum font-medium ${pnlClass(decomposition.price)}`}>
+                {signedMoney(decomposition.price, baseCurrency)}
+              </span>
+            </span>
+            <span className="text-ink-soft">
+              Выплаты{" "}
+              <span className={`tnum font-medium ${pnlClass(decomposition.income)}`}>
+                {signedMoney(decomposition.income, baseCurrency)}
+              </span>
+            </span>
+            <span className="text-ink-soft">
+              Валютная переоценка{" "}
+              <span className={`tnum font-medium ${pnlClass(decomposition.fx)}`}>
+                {signedMoney(decomposition.fx, baseCurrency)}
+              </span>
+            </span>
+            <span className="text-ink-soft">
+              Реализовано{" "}
+              <span className={`tnum font-medium ${pnlClass(decomposition.realized)}`}>
+                {signedMoney(decomposition.realized, baseCurrency)}
+              </span>
+            </span>
+          </div>
+          {Math.abs(decomposition.fx) > 1 && (
+            <p className="mt-2 text-xs leading-relaxed text-ink-mute">
+              Валютная переоценка — это не рост бумаги, а сдвиг курса между покупкой и сегодня.
+              Для рублёвого инвестора это отдельная ставка с отдельным риском.
+            </p>
+          )}
+        </div>
+      )}
 
       {excluded.length > 0 && (
         <div className="mt-4">

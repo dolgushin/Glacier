@@ -117,7 +117,24 @@ function reclassifyDerivatives(db: DatabaseSync): void {
   }
 }
 
+/**
+ * Telegram-поля у пользователей старых баз. CREATE TABLE IF NOT EXISTS не
+ * добавляет колонки в уже существующую таблицу — только ALTER.
+ */
+function migrateUserTelegram(db: DatabaseSync): void {
+  const columns = new Set(
+    (db.prepare("PRAGMA table_info(users)").all() as { name: string }[]).map((c) => c.name),
+  );
+  if (!columns.has("telegram_chat_id")) {
+    db.exec("ALTER TABLE users ADD COLUMN telegram_chat_id TEXT");
+  }
+  if (!columns.has("telegram_code")) {
+    db.exec("ALTER TABLE users ADD COLUMN telegram_code TEXT");
+  }
+}
+
 export function runMigrations(db: DatabaseSync): void {
   migrateBrokerAccounts(db);
   reclassifyDerivatives(db);
+  migrateUserTelegram(db);
 }

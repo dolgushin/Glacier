@@ -9,6 +9,7 @@ const LINKS = [
   { href: "/transactions", label: "Сделки" },
   { href: "/calendar", label: "Выплаты" },
   { href: "/rebalance", label: "Баланс" },
+  { href: "/taxes", label: "Налоги" },
   { href: "/portfolios", label: "Портфели" },
   { href: "/connections", label: "Брокеры" },
   { href: "/settings", label: "Настройки" },

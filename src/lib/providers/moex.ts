@@ -307,4 +307,56 @@ export async function fetchBondPayouts(secid: string): Promise<MoexPayout[]> {
   }
 }
 
+// ------------------------------------------------------------------ indexes
+
+/** История индекса: дата -> закрытие. Для IMOEX и ему подобных. */
+const INDEX_PAGE = 100;
+const INDEX_MAX_PAGES = 50;
+
+async function fetchIndexHistoryRaw(secid: string, from: string): Promise<Map<string, number>> {
+  const history = new Map<string, number>();
+
+  for (let page = 0; page < INDEX_MAX_PAGES; page++) {
+    const payload = await iss(
+      `/history/engines/stock/markets/index/securities/${secid}.json`,
+      { from, start: page * INDEX_PAGE, "history.columns": "TRADEDATE,CLOSE" },
+    );
+    const data = rows(payload.history);
+    for (const row of data) {
+      const date = str(row.TRADEDATE);
+      const close = num(row.CLOSE);
+      if (date && close !== null) history.set(date, close);
+    }
+    if (data.length < INDEX_PAGE) break;
+  }
+
+  return history;
+}
+
+// Дашборд перерисовывается на каждое открытие; индекс за тот же период внутри
+// одного дня не меняется, поэтому ответ кэшируется в памяти процесса.
+const INDEX_CACHE_TTL_MS = 6 * 3_600_000;
+const indexCache = new Map<string, { at: number; history: Map<string, number> }>();
+
+/**
+ * Дневные закрытия индекса с даты `from` до сегодня. При недоступности MOEX —
+ * пустая карта: бенчмарк на графике просто не появится, страница не сломается.
+ */
+export async function fetchIndexHistory(
+  secid: string,
+  from: string,
+): Promise<Map<string, number>> {
+  const key = `${secid}|${from}`;
+  const cached = indexCache.get(key);
+  if (cached && Date.now() - cached.at < INDEX_CACHE_TTL_MS) return cached.history;
+
+  try {
+    const history = await fetchIndexHistoryRaw(secid, from);
+    indexCache.set(key, { at: Date.now(), history });
+    return history;
+  } catch {
+    return cached?.history ?? new Map();
+  }
+}
+
 export { marketFor };

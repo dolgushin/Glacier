@@ -22,7 +22,9 @@ CREATE TABLE IF NOT EXISTS users (
   base_currency TEXT    NOT NULL DEFAULT 'RUB',
   is_active     INTEGER NOT NULL DEFAULT 1,
   created_at    TEXT    NOT NULL,
-  last_login_at TEXT
+  last_login_at TEXT,
+  telegram_chat_id TEXT,                           -- привязанный чат бота
+  telegram_code    TEXT                            -- одноразовый код привязки
 );
 
 CREATE TABLE IF NOT EXISTS sessions (

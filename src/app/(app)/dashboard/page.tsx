@@ -16,6 +16,8 @@ import {
   valueSeries,
 } from "@/lib/domain/analytics";
 import { buildCalendar, byMonth, forwardIncome } from "@/lib/domain/payouts";
+import { seriesChange, twr } from "@/lib/domain/twr";
+import { fetchIndexHistory } from "@/lib/providers/moex";
 import { money, percent, pnlClass, signedMoney, signedPercent } from "@/lib/format";
 import {
   AllocationList,
@@ -104,6 +106,14 @@ export default async function DashboardPage({
   const priceHistory = loadPriceHistory([...instruments.keys()]);
   const series = valueSeries(transactions, priceHistory, instruments, fxRates, baseCurrency);
 
+  // TWR — доходность решений, сопоставимая с индексом; XIRR — денег с учётом
+  // моментов пополнений. Рядом они отвечают на два разных вопроса.
+  const twrValue = twr(series, transactions);
+  const benchmark =
+    series.length > 0
+      ? seriesChange(await fetchIndexHistory("IMOEX", series[0].date), series[0].date)
+      : null;
+
   const calendar = buildCalendar(summary.positions, context.payouts, transactions);
   const expected = forwardIncome(calendar, fxRates, baseCurrency);
   const payoutMonths = byMonth(calendar, fxRates, baseCurrency);
@@ -161,7 +171,17 @@ export default async function DashboardPage({
             label="Доходность"
             value={summary.xirr !== null ? signedPercent(summary.xirr) : "—"}
             tone={summary.xirr === null ? "neutral" : summary.xirr > 0 ? "good" : "bad"}
-            hint={summary.xirr !== null ? "годовых, XIRR" : "недостаточно данных"}
+            hint={
+              summary.xirr === null
+                ? "недостаточно данных"
+                : [
+                    "годовых, XIRR",
+                    twrValue !== null ? `TWR ${signedPercent(twrValue)}` : null,
+                    benchmark !== null ? `IMOEX ${signedPercent(benchmark)} за тот же срок` : null,
+                  ]
+                    .filter(Boolean)
+                    .join(" · ")
+            }
           />
           <Metric
             label="Выплаты за год"

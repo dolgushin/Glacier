@@ -7,6 +7,7 @@ import {
   type ActionState,
 } from "@/app/actions/data";
 import { changePasswordAction, type FormState } from "@/app/actions/auth";
+import { telegramLinkAction, telegramUnlinkAction } from "@/app/actions/telegram";
 import { importCsvAction, type ImportState } from "@/app/actions/import";
 import { Notice, Button, Field, Input, Select, Textarea } from "@/components/ui";
 import type { Portfolio } from "@/lib/types";
@@ -189,5 +190,69 @@ export function PasswordPanel() {
         {pending ? "Сохранение…" : "Сменить пароль"}
       </Button>
     </form>
+  );
+}
+
+/** Привязка Telegram-бота: выплаты и сбои синхронизации приходят в чат. */
+export function TelegramPanel({ linked }: { linked: boolean }) {
+  const [linkState, linkAction, linking] = useActionState(telegramLinkAction, {});
+  const [unlinkState, unlinkAction, unlinking] = useActionState(telegramUnlinkAction, {});
+
+  const state = linkState.error || linkState.success ? linkState : unlinkState;
+
+  return (
+    <div className="space-y-3">
+      {state.error && <Notice>{state.error}</Notice>}
+      {state.success && <Notice tone="success">{state.success}</Notice>}
+
+      {linked ? (
+        <>
+          <p className="text-xs leading-relaxed text-ink-soft">
+            Чат привязан. Приходят: новые выплаты из автосинхронизации и её сбои. Команда боту
+            /week — выплаты на ближайшие 7 дней.
+          </p>
+          <form action={unlinkAction}>
+            <Button type="submit" variant="ghost" disabled={unlinking}>
+              {unlinking ? "Отвязываю…" : "Отключить уведомления"}
+            </Button>
+          </form>
+        </>
+      ) : (
+        <>
+          <p className="text-xs leading-relaxed text-ink-mute">
+            Бот пришлёт в личку новые дивиденды и купоны, а также предупредит, если
+            синхронизация с брокером упала. Нажмите «Получить код», затем отправьте его боту
+            командой <span className="code">/start КОД</span>
+            {linkState.botName ? (
+              <>
+                {" "}
+                — бот: <span className="code">@{linkState.botName}</span>
+              </>
+            ) : null}
+            .
+          </p>
+
+          {linkState.code && (
+            <div className="rounded-md border border-accent bg-sunk px-3 py-2.5">
+              <p className="text-[11px] font-medium tracking-wide text-ink-mute uppercase">
+                Ваш код привязки
+              </p>
+              <p className="code mt-1 text-lg font-semibold tracking-[0.2em] text-accent">
+                {linkState.code}
+              </p>
+              <p className="mt-1 text-[11px] text-ink-mute">
+                Одноразовый: после привязки сгорает. /start {linkState.code}
+              </p>
+            </div>
+          )}
+
+          <form action={linkAction}>
+            <Button type="submit" variant="ghost" disabled={linking}>
+              {linking ? "Выпускаю…" : linkState.code ? "Перевыпустить код" : "Получить код привязки"}
+            </Button>
+          </form>
+        </>
+      )}
+    </div>
   );
 }

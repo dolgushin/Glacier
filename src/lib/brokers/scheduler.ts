@@ -1,6 +1,7 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import { syncAllUsers } from "@/lib/brokers/engine";
 import { logSync, refreshQuotes } from "@/lib/sync";
+import { notifyRound } from "@/lib/telegram";
 import { nowIso } from "@/lib/db";
 
 /**
@@ -89,5 +90,13 @@ export async function runSyncRound(): Promise<SyncRound> {
     errors,
   };
   logSync("brokers-auto", errors.length > 0 ? "error" : "ok", describeRound(round), startedAt);
+
+  // Уведомления — после журнала и никогда в ущерб ему: сбой Telegram не должен
+  // красить удачный раунд в ошибку.
+  try {
+    await notifyRound(startedAt, errors);
+  } catch {
+    // тихо: журнал раунда уже записан
+  }
   return round;
 }

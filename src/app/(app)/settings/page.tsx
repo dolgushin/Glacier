@@ -6,7 +6,8 @@ import { listConnections } from "@/lib/brokers/engine";
 import { CSV_TEMPLATE } from "@/lib/import/csv";
 import { relativeTime } from "@/lib/format";
 import { Tag, Button, Section, Empty } from "@/components/ui";
-import { CsvImportPanel, PasswordPanel, RefreshPanel } from "./panels";
+import { CsvImportPanel, PasswordPanel, RefreshPanel, TelegramPanel } from "./panels";
+import { telegramChatId } from "@/lib/telegram";
 
 export const dynamic = "force-dynamic";
 
@@ -16,6 +17,7 @@ export default async function SettingsPage() {
   const syncInfo = lastSyncInfo();
   const connections = listConnections(user.id);
   const linkedAccounts = connections.reduce((sum, item) => sum + item.links.length, 0);
+  const telegramLinked = telegramChatId(user.id) !== null;
 
   return (
     <div className="space-y-6">
@@ -49,7 +51,9 @@ export default async function SettingsPage() {
                           ? "Курсы валют"
                           : entry.kind === "payouts"
                             ? "Купоны и выплаты"
-                            : "Брокер"}
+                            : entry.kind === "brokers-auto"
+                              ? "Автосинхронизация"
+                              : "Брокер"}
                     </span>
                     <span className="flex items-center gap-2">
                       <span className="text-ink-mute">{entry.detail}</span>
@@ -73,6 +77,13 @@ export default async function SettingsPage() {
 
         <Section title="Смена пароля" subtitle="После смены все остальные сессии будут завершены">
           <PasswordPanel />
+        </Section>
+
+        <Section
+          title="Telegram-уведомления"
+          subtitle="Новые выплаты и сбои автосинхронизации — в личный чат с ботом"
+        >
+          <TelegramPanel linked={telegramLinked} />
         </Section>
       </div>
 
