@@ -1,4 +1,4 @@
-import type { Instrument, Payout, Transaction } from "@/lib/types";
+import { INCOME_TYPES, type Instrument, type Payout, type Transaction } from "@/lib/types";
 import type { Position } from "@/lib/domain/positions";
 
 /**
@@ -241,4 +241,162 @@ export function receivedByYear(transactions: Transaction[]): { year: string; amo
   return [...buckets.entries()]
     .map(([year, amount]) => ({ year, amount }))
     .sort((a, b) => a.year.localeCompare(b.year));
+}
+
+// ---------------------------------------------------- матрица и устойчивость
+
+/** Одна строка матрицы «год × месяц»: полученные выплаты в базовой валюте. */
+export interface MatrixRow {
+  year: number;
+  /** 12 значений, null — месяца нет данных (он ещё не наступил). */
+  months: (number | null)[];
+  total: number;
+}
+
+/**
+ * Матрица полученных выплат, как в DivvyDiary: строки — годы, колонки — месяцы.
+ * Структура пассивного дохода читается сразу: сезонность, провалы, рост по
+ * колонке одного месяца из года в год.
+ *
+ * Текущий год обрезается по текущему месяцу: нули в будущих месяцах читались
+ * бы как «не заплатили», а это неправда. Месяцы без выплат внутри прошлого —
+ * честный ноль.
+ */
+export function dividendMatrix(
+  transactions: Transaction[],
+  asOf = new Date().toISOString().slice(0, 10),
+): MatrixRow[] {
+  const currentYear = Number(asOf.slice(0, 4));
+  const currentMonth = Number(asOf.slice(5, 7));
+
+  const buckets = new Map<number, number[]>();
+  for (const tx of transactions) {
+    if (!INCOME_TYPES.includes(tx.type)) continue;
+    const year = Number(tx.ts.slice(0, 4));
+    const month = Number(tx.ts.slice(5, 7));
+    if (!Number.isFinite(year) || !Number.isFinite(month)) continue;
+
+    const row = buckets.get(year) ?? Array.from({ length: 12 }, () => 0);
+    row[month - 1] += tx.amount * tx.fx_rate;
+    buckets.set(year, row);
+  }
+
+  return [...buckets.entries()]
+    .map(([year, months]) => {
+      const visible = months.map((amount, index) =>
+        year === currentYear && index + 1 > currentMonth ? null : amount,
+      );
+      return {
+        year,
+        months: visible,
+        total: months.reduce((sum, amount) => sum + amount, 0),
+      };
+    })
+    .sort((a, b) => b.year - a.year);
+}
+
+export type PayoutTrend = "growing" | "stable" | "falling" | "interrupted" | "insufficient";
+
+export interface Sustainability {
+  instrumentId: number;
+  symbol: string;
+  name: string;
+  /** Сколько лет подряд бумага платила, считая от последнего платёжного года. */
+  streak: number;
+  trend: PayoutTrend;
+  /** Получено за последние 12 месяцев, в базовой валюте. */
+  trailing: number;
+  /** Получено за предыдущие 12 месяцев. */
+  previous: number;
+}
+
+/**
+ * Устойчивость выплат по бумаге — российский аналог Safety Score из
+ * TrackYourDividends, построенный на том, что мы знаем точно: на вашей истории
+ * начислений. Payout ratio и тренд EPS из открытых источников недоступны,
+ * поэтому оценка честно отвечает на более узкий вопрос: «платит ли, растёт ли».
+ *
+ * Порог ±10 % отсекает копеечные колебания сумм; восемнадцать месяцев тишины
+ * у бумаги, которая платила хотя бы дважды, читаются как «перестала платить».
+ */
+export function payoutSustainability(
+  transactions: Transaction[],
+  instruments: Map<number, Instrument>,
+  asOf = new Date().toISOString().slice(0, 10),
+): Sustainability[] {
+  const byInstrument = new Map<number, { ts: string; amount: number }[]>();
+  for (const tx of transactions) {
+    if (tx.instrument_id === null || !INCOME_TYPES.includes(tx.type)) continue;
+    const list = byInstrument.get(tx.instrument_id) ?? [];
+    list.push({ ts: tx.ts, amount: tx.amount * tx.fx_rate });
+    byInstrument.set(tx.instrument_id, list);
+  }
+
+  const now = Date.parse(asOf);
+  const yearMs = 365 * 86_400_000;
+  const result: Sustainability[] = [];
+
+  for (const [instrumentId, payments] of byInstrument) {
+    const instrument = instruments.get(instrumentId);
+    if (!instrument) continue;
+
+    payments.sort((a, b) => a.ts.localeCompare(b.ts));
+    const years = [...new Set(payments.map((payment) => Number(payment.ts.slice(0, 4))))].sort(
+      (a, b) => a - b,
+    );
+
+    // Серия: идём от последнего платёжного года назад, пока годы неразрывны.
+    let streak = 0;
+    for (let index = years.length - 1; index >= 0; index--) {
+      if (index === years.length - 1 || years[index] === years[index + 1] - 1) streak++;
+      else break;
+    }
+
+    const trailing = payments
+      .filter((payment) => now - Date.parse(payment.ts) <= yearMs)
+      .reduce((sum, payment) => sum + payment.amount, 0);
+    const previous = payments
+      .filter((payment) => {
+        const age = now - Date.parse(payment.ts);
+        return age > yearMs && age <= 2 * yearMs;
+      })
+      .reduce((sum, payment) => sum + payment.amount, 0);
+
+    const lastPaymentAt = Date.parse(payments[payments.length - 1].ts);
+
+    let trend: PayoutTrend;
+    if (payments.length < 2 || years.length < 2) {
+      trend = "insufficient";
+    } else if (now - lastPaymentAt > 18 * 30 * 86_400_000) {
+      trend = "interrupted";
+    } else if (previous > 0 && trailing > previous * 1.1) {
+      trend = "growing";
+    } else if (trailing < previous * 0.9) {
+      trend = "falling";
+    } else {
+      trend = "stable";
+    }
+
+    result.push({
+      instrumentId,
+      symbol: instrument.symbol,
+      name: instrument.name,
+      streak,
+      trend,
+      trailing,
+      previous,
+    });
+  }
+
+  // Сначала те, кто платит и растит выплаты, — они и есть ответ на вопрос.
+  const rank: Record<PayoutTrend, number> = {
+    growing: 0,
+    stable: 1,
+    falling: 2,
+    interrupted: 3,
+    insufficient: 4,
+  };
+  return result.sort(
+    (a, b) => rank[a.trend] - rank[b.trend] || b.trailing - a.trailing,
+  );
 }

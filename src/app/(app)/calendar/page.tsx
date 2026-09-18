@@ -1,13 +1,48 @@
 import { requireUser } from "@/lib/auth";
 import { loadContext, resolvePortfolioId } from "@/lib/context";
 import { listPortfolios } from "@/lib/repo";
-import { buildCalendar, byMonth, forwardIncome, receivedByYear } from "@/lib/domain/payouts";
+import {
+  buildCalendar,
+  byMonth,
+  dividendMatrix,
+  forwardIncome,
+  payoutSustainability,
+  receivedByYear,
+} from "@/lib/domain/payouts";
 import { date as formatDate, money, monthLabel, number, percent } from "@/lib/format";
 import { Tag, Section, Empty, Metric, Table, Td, Th } from "@/components/ui";
 import { PayoutBars, YearBars } from "@/components/charts";
 import { PortfolioSwitcher } from "@/components/portfolio-switcher";
 
 export const dynamic = "force-dynamic";
+
+const MONTH_SHORT = ["Янв", "Фев", "Мар", "Апр", "Май", "Июн", "Июл", "Авг", "Сен", "Окт", "Ноя", "Дек"];
+
+const TREND_LABELS: Record<string, string> = {
+  growing: "растёт",
+  stable: "стабильно",
+  falling: "снижается",
+  interrupted: "перестала платить",
+  insufficient: "мало данных",
+};
+
+const TREND_TONES: Record<string, "good" | "neutral" | "warn" | "bad"> = {
+  growing: "good",
+  stable: "neutral",
+  falling: "warn",
+  interrupted: "bad",
+  insufficient: "neutral",
+};
+
+/** 1 год, 2 года, 5 лет. */
+function yearsLabel(count: number): string {
+  const mod100 = count % 100;
+  const mod10 = mod100 % 10;
+  if (mod100 >= 11 && mod100 <= 14) return "лет";
+  if (mod10 === 1) return "год";
+  if (mod10 >= 2 && mod10 <= 4) return "года";
+  return "лет";
+}
 
 export default async function CalendarPage({
   searchParams,
@@ -26,6 +61,12 @@ export default async function CalendarPage({
   const expected = forwardIncome(calendar, fxRates, baseCurrency);
   const months = byMonth(calendar, fxRates, baseCurrency);
   const received = receivedByYear(transactions);
+  const matrix = dividendMatrix(transactions);
+  const matrixMax = Math.max(
+    1,
+    ...matrix.flatMap((row) => row.months.map((amount) => amount ?? 0)),
+  );
+  const sustainability = payoutSustainability(transactions, context.instruments);
 
   const announcedCount = calendar.filter((entry) => entry.status === "announced").length;
   const forwardYield = summary.marketValue > 0 ? expected / summary.marketValue : null;
@@ -138,7 +179,93 @@ export default async function CalendarPage({
           <YearBars data={received} currency={baseCurrency} />
         </Section>
 
-        <Section title="Как это считается">
+        <Section
+          title="Устойчивость выплат"
+          subtitle="Серия лет и тренд по вашей истории начислений — без выдуманных факторов"
+        >
+          {sustainability.length === 0 ? (
+            <Empty
+              title="Пока нечего оценивать"
+              hint="Оценка появится, когда в журнале будут начисления хотя бы по одной бумаге."
+            />
+          ) : (
+            <ul className="divide-y divide-rule">
+              {sustainability.slice(0, 10).map((item) => (
+                <li key={item.instrumentId} className="flex items-center justify-between gap-3 py-2">
+                  <div className="min-w-0">
+                    <span className="code text-[13px] font-medium text-ink">{item.symbol}</span>
+                    <span className="ml-2 text-xs text-ink-mute">
+                      {item.streak > 0 ? `платит ${item.streak} ${yearsLabel(item.streak)} подряд` : "—"}
+                    </span>
+                  </div>
+                  <span className="flex shrink-0 items-center gap-2">
+                    <span className="tnum text-xs text-ink-mute">
+                      {money(item.trailing, baseCurrency, 0)} за 12 мес
+                    </span>
+                    <Tag tone={TREND_TONES[item.trend]}>{TREND_LABELS[item.trend]}</Tag>
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Section>
+      </div>
+
+      {matrix.length > 0 && (
+        <Section
+          title="Матрица выплат"
+          subtitle="Годы по строкам, месяцы по колонкам — структура пассивного дохода"
+        >
+          <Table minWidth={900}>
+            <thead>
+              <tr>
+                <Th>Год</Th>
+                {MONTH_SHORT.map((month) => (
+                  <Th key={month} align="right">
+                    {month}
+                  </Th>
+                ))}
+                <Th align="right">Итого</Th>
+              </tr>
+            </thead>
+            <tbody>
+              {matrix.map((row) => (
+                <tr key={row.year}>
+                  <Td className="font-medium text-ink">{row.year}</Td>
+                  {row.months.map((amount, index) => (
+                    <Td key={index} align="right" className="tnum">
+                      {amount === null ? (
+                        <span className="text-ink-faint">·</span>
+                      ) : amount > 0 ? (
+                        <span
+                          className="inline-block rounded-sm px-1"
+                          style={{
+                            // Последовательная шкала одного оттенка: насыщенность
+                            // — величина выплаты. Сравнение колонки «июнь» по
+                            // годам читается без легенды.
+                            background: `color-mix(in oklab, var(--color-accent) ${Math.round(
+                              (amount / matrixMax) * 70 + 10,
+                            )}%, transparent)`,
+                          }}
+                        >
+                          {money(amount, baseCurrency, 0)}
+                        </span>
+                      ) : (
+                        <span className="text-ink-faint">—</span>
+                      )}
+                    </Td>
+                  ))}
+                  <Td align="right" className="tnum font-semibold text-ink">
+                    {money(row.total, baseCurrency, 0)}
+                  </Td>
+                </tr>
+              ))}
+            </tbody>
+          </Table>
+        </Section>
+      )}
+
+      <Section title="Как это считается">
           <div className="space-y-3 text-xs leading-relaxed text-ink-mute">
             <p>
               <span className="text-ink">Объявленные выплаты</span> по облигациям берутся из
@@ -160,7 +287,6 @@ export default async function CalendarPage({
             </p>
           </div>
         </Section>
-      </div>
 
       {months.length > 0 && (
         <Section title="Помесячная разбивка">
