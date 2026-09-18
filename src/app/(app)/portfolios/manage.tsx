@@ -44,9 +44,94 @@ export function CreatePortfolio() {
   );
 }
 
+import { sharePortfolioAction, revokeShareAction, type ShareState } from "@/app/actions/shares";
+
+/**
+ * Публичная ссылка портфеля: создать, скопировать, отозвать.
+ * Живёт под названием — это свойство портфеля, а не отдельная страница.
+ */
+function ShareControl({
+  portfolioId,
+  share,
+}: {
+  portfolioId: number;
+  share: { id: number; token: string } | null;
+}) {
+  const [state, action, pending] = useActionState(sharePortfolioAction, {} as ShareState);
+  const [revokeState, revokeAction, revoking] = useActionState(revokeShareAction, {} as ShareState);
+  const [copied, setCopied] = useState(false);
+
+  const copy = (path: string) => {
+    void navigator.clipboard.writeText(`${window.location.origin}${path}`);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  };
+
+  if (share) {
+    return (
+      <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px]">
+        <a
+          href={`/public/${share.token}`}
+          target="_blank"
+          rel="noreferrer"
+          className="text-accent hover:underline"
+        >
+          Публичная ссылка ↗
+        </a>
+        <button
+          type="button"
+          onClick={() => copy(`/public/${share.token}`)}
+          className="text-ink-mute hover:text-ink"
+        >
+          {copied ? "скопировано ✓" : "копировать"}
+        </button>
+        <form action={revokeAction} className="inline">
+          <input type="hidden" name="portfolioId" value={portfolioId} />
+          <input type="hidden" name="shareId" value={share.id} />
+          <button type="submit" disabled={revoking} className="text-ink-mute hover:text-loss">
+            {revoking ? "отзываю…" : "отозвать"}
+          </button>
+        </form>
+        {revokeState.error && <span className="text-loss">{revokeState.error}</span>}
+      </div>
+    );
+  }
+
+  return (
+    <div className="mt-1.5">
+      <form
+        action={(formData) => {
+          formData.set("origin", window.location.origin);
+          return action(formData);
+        }}
+      >
+        <input type="hidden" name="portfolioId" value={portfolioId} />
+        <button
+          type="submit"
+          disabled={pending}
+          className="text-[11px] text-ink-mute hover:text-accent"
+        >
+          {pending ? "создаю…" : "Поделиться сводкой"}
+        </button>
+      </form>
+      {state.url && (
+        <button
+          type="button"
+          onClick={() => copy(state.url!.slice(window.location.origin.length))}
+          className="mt-1 block max-w-full truncate text-left text-[11px] text-accent hover:underline"
+        >
+          {copied ? "скопировано ✓" : state.url}
+        </button>
+      )}
+      {state.error && <p className="mt-1 text-[11px] text-loss">{state.error}</p>}
+    </div>
+  );
+}
+
 export function PortfolioRow({
   portfolio,
   broker,
+  share,
   value,
   positions,
   operations,
@@ -56,6 +141,8 @@ export function PortfolioRow({
   portfolio: Portfolio;
   /** Resolved upstream from the live broker link, not from the stored column. */
   broker: string;
+  /** Активная публичная ссылка, если создана. */
+  share: { id: number; token: string } | null;
   value: number;
   positions: number;
   operations: number;
@@ -90,7 +177,10 @@ export function PortfolioRow({
             </button>
           </form>
         ) : (
-          <div className="font-medium text-ink">{portfolio.name}</div>
+          <div>
+            <div className="font-medium text-ink">{portfolio.name}</div>
+            <ShareControl portfolioId={portfolio.id} share={share} />
+          </div>
         )}
         {renameState.error && <p className="text-[11px] text-loss">{renameState.error}</p>}
       </Td>

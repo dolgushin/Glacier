@@ -416,3 +416,48 @@ export function brokersByPortfolio(userId: number): Map<number, string[]> {
   }
   return map;
 }
+
+// ---------------------------------------------------------- public shares
+
+export interface PortfolioShare {
+  id: number;
+  portfolio_id: number;
+  token: string;
+  is_active: number;
+  created_at: string;
+}
+
+/**
+ * Активная публичная ссылка портфеля, если есть.
+ * Токен — 128 бит энтропии: перебор не обсуждается, доступ — сама ссылка.
+ */
+export function activeShare(portfolioId: number): PortfolioShare | undefined {
+  return get<PortfolioShare>(
+    "SELECT * FROM portfolio_shares WHERE portfolio_id = ? AND is_active = 1 ORDER BY id DESC LIMIT 1",
+    portfolioId,
+  );
+}
+
+export function createShare(portfolioId: number, token: string): void {
+  run(
+    "INSERT INTO portfolio_shares (portfolio_id, token, is_active, created_at) VALUES (?, ?, 1, ?)",
+    portfolioId,
+    token,
+    nowIso(),
+  );
+}
+
+export function revokeShare(shareId: number, portfolioId: number): void {
+  run("UPDATE portfolio_shares SET is_active = 0 WHERE id = ? AND portfolio_id = ?", shareId, portfolioId);
+}
+
+/** Для публичной страницы: портфель по живому токену, без всякой сессии. */
+export function portfolioByShareToken(token: string): { portfolio: Portfolio; share: PortfolioShare } | undefined {
+  const share = get<PortfolioShare>(
+    "SELECT * FROM portfolio_shares WHERE token = ? AND is_active = 1",
+    token,
+  );
+  if (!share) return undefined;
+  const portfolio = get<Portfolio>("SELECT * FROM portfolios WHERE id = ?", share.portfolio_id);
+  return portfolio ? { portfolio, share } : undefined;
+}

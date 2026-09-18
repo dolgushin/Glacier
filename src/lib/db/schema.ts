@@ -205,4 +205,16 @@ CREATE TABLE IF NOT EXISTS settings (
   key   TEXT PRIMARY KEY,
   value TEXT NOT NULL
 );
+
+-- Публичные read-only ссылки на портфель. Токен — единственный ключ доступа:
+-- кто знает ссылку, тот смотрит сводку. Отзыв ссылки — UPDATE is_active = 0,
+-- история выданных ссылок сохраняется.
+CREATE TABLE IF NOT EXISTS portfolio_shares (
+  id           INTEGER PRIMARY KEY,
+  portfolio_id INTEGER NOT NULL REFERENCES portfolios(id) ON DELETE CASCADE,
+  token        TEXT    NOT NULL UNIQUE,
+  is_active    INTEGER NOT NULL DEFAULT 1,
+  created_at   TEXT    NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_portfolio_shares_token ON portfolio_shares(token);
 `;

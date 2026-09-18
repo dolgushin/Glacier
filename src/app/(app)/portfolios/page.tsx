@@ -1,5 +1,5 @@
 import { requireUser } from "@/lib/auth";
-import { brokersByPortfolio, listCategories, listPortfolios, listTransactions } from "@/lib/repo";
+import { activeShare, brokersByPortfolio, listCategories, listPortfolios, listTransactions } from "@/lib/repo";
 import { getAdapter } from "@/lib/brokers/registry";
 import { date as formatDate, money } from "@/lib/format";
 import { loadContext } from "@/lib/context";
@@ -33,6 +33,7 @@ export default async function PortfoliosPage() {
       operations: listTransactions(user.id, { portfolioId: portfolio.id }).length,
       categories: listCategories(portfolio.id).length,
       cashKnown: context.summary.cashKnown,
+      share: activeShare(portfolio.id) ?? null,
     };
   });
 
@@ -73,6 +74,7 @@ export default async function PortfoliosPage() {
                   key={row.portfolio.id}
                   portfolio={row.portfolio}
                   broker={row.broker}
+                  share={row.share ? { id: row.share.id, token: row.share.token } : null}
                   value={row.value}
                   positions={row.positions}
                   operations={row.operations}
