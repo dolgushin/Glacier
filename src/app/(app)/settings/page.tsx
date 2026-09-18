@@ -88,6 +88,36 @@ export default async function SettingsPage() {
       </div>
 
       <Section
+        title="Экспорт данных"
+        subtitle="Ваш журнал, позиции и выплаты в CSV — формат читает Excel и принимает наш же импорт"
+      >
+        <div className="flex flex-wrap gap-3">
+          <a
+            href="/api/export?what=transactions"
+            className="rounded-md border border-rule px-3 py-2 text-xs font-medium text-ink-soft transition-colors hover:border-accent hover:text-accent"
+          >
+            Журнал операций ↓
+          </a>
+          <a
+            href="/api/export?what=positions"
+            className="rounded-md border border-rule px-3 py-2 text-xs font-medium text-ink-soft transition-colors hover:border-accent hover:text-accent"
+          >
+            Позиции ↓
+          </a>
+          <a
+            href="/api/export?what=payouts"
+            className="rounded-md border border-rule px-3 py-2 text-xs font-medium text-ink-soft transition-colors hover:border-accent hover:text-accent"
+          >
+            Выплаты ↓
+          </a>
+        </div>
+        <p className="mt-3 text-xs leading-relaxed text-ink-mute">
+          Выгружаются все портфели сразу. Добавьте к ссылке <span className="code">&amp;p=&lt;id&gt;</span>,
+          чтобы получить один портфель.
+        </p>
+      </Section>
+
+      <Section
         title="Импорт из CSV"
         subtitle="Повторный импорт того же файла безопасен — строки с идентификатором не задваиваются"
       >
