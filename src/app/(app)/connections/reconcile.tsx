@@ -1,7 +1,7 @@
 "use client";
 
 import { useActionState } from "react";
-import { importOpeningAction, reconcileAction, type BrokerState } from "@/app/actions/brokers";
+import { importOpeningAction, reconcileAction, correctQuantityAction, type BrokerState } from "@/app/actions/brokers";
 import { Notice, Table, Tag, Td, Th } from "@/components/ui";
 import { money, number, pnlClass } from "@/lib/format";
 import type { Reconciliation } from "@/lib/brokers/engine";
@@ -25,6 +25,7 @@ const STATUS: Record<string, { label: string; tone: "good" | "bad" | "warn" | "n
 export function ReconcilePanel({ linkId }: { linkId: number }) {
   const [state, action, pending] = useActionState(reconcileAction, initial);
   const [importState, importAction, importing] = useActionState(importOpeningAction, initial);
+  const [correctState, correctAction, correcting] = useActionState(correctQuantityAction, initial);
   const result = state.reconciliation;
   const missing = result?.rows.filter((row) => row.status === "missing-here").length ?? 0;
 
@@ -159,12 +160,58 @@ export function ReconcilePanel({ linkId }: { linkId: number }) {
                     </Td>
                     <Td>
                       <Tag tone={STATUS[row.status].tone}>{STATUS[row.status].label}</Tag>
+                      {row.brokerQuantity !== null &&
+                        row.ledgerQuantity !== null &&
+                        row.brokerQuantity < row.ledgerQuantity &&
+                        row.ledgerQuantity > 0 && (
+                          <form
+                            action={correctAction}
+                            className="mt-1.5"
+                            onSubmit={(event) => {
+                              if (
+                                !confirm(
+                                  `Привести ${row.symbol} к брокерскому количеству?\n\n` +
+                                    `В журнале: ${number(row.ledgerQuantity!, 8)} шт\n` +
+                                    `У брокера: ${number(row.brokerQuantity!, 8)} шт\n\n` +
+                                    "Будет записана операция «Сплит» с коэффициентом " +
+                                    "брокер/журнал: количество и средняя цена пересчитаются, " +
+                                    "себестоимость не изменится. Операцию можно удалить в журнале сделок.",
+                                )
+                              ) {
+                                event.preventDefault();
+                              }
+                            }}
+                          >
+                            <input type="hidden" name="linkId" value={linkId} />
+                            <input type="hidden" name="symbol" value={row.symbol} />
+                            <input type="hidden" name="brokerQuantity" value={row.brokerQuantity} />
+                            <button
+                              type="submit"
+                              disabled={correcting}
+                              title="Записать сплит с коэффициентом брокер/журнал"
+                              className="text-[11px] font-medium text-accent hover:underline disabled:opacity-50"
+                            >
+                              привести к брокеру
+                            </button>
+                          </form>
+                        )}
                     </Td>
                   </tr>
                 ))}
               </tbody>
             </Table>
           </div>
+
+          {(correctState.error || correctState.success) && (
+            <div className="mt-3">
+              <Notice tone={correctState.error ? "error" : "success"}>
+                <div>{correctState.error ?? correctState.success}</div>
+                {correctState.hint && (
+                  <div className="mt-1.5 text-xs leading-relaxed opacity-90">{correctState.hint}</div>
+                )}
+              </Notice>
+            </div>
+          )}
 
           <p className="mt-3 text-xs leading-relaxed text-ink-mute">
             <span className="text-ink-soft">«Нет в журнале»</span> — брокер держит бумагу, а у нас

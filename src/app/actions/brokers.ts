@@ -6,6 +6,7 @@ import { listPortfolios } from "@/lib/repo";
 import { refreshQuotes } from "@/lib/sync";
 import { requireAdapter } from "@/lib/brokers/registry";
 import {
+  applyQuantityCorrection,
   deleteConnection,
   reconcile,
   importOpeningPositions,
@@ -337,4 +338,39 @@ export async function importOpeningAction(
 export async function portfolioOptionsAction(): Promise<{ id: number; name: string }[]> {
   const user = await requireUser();
   return listPortfolios(user.id).map((portfolio) => ({ id: portfolio.id, name: portfolio.name }));
+}
+
+/**
+ * Привести количество позиции к брокерскому сплитом с коэффициентом
+ * брокер/журнал. Инструмент для расхождений вида «в журнале 9 336, у брокера
+ * 340» — неучтённая консолидация. Пропущенные покупки им не чинятся: для
+ * случая «у брокера больше» движок вернёт ошибку с указанием верного пути.
+ */
+export async function correctQuantityAction(
+  _previous: BrokerState,
+  data: FormData,
+): Promise<BrokerState> {
+  const user = await requireUser();
+  try {
+    const result = applyQuantityCorrection(
+      user.id,
+      Number(data.get("linkId")),
+      text(data, "symbol"),
+      Number(data.get("brokerQuantity")),
+    );
+    await refreshQuotes();
+
+    revalidatePath("/connections");
+    revalidatePath("/dashboard");
+    revalidatePath("/assets");
+
+    return {
+      success: `${result.symbol}: количество приведено к брокеру, ${result.from} → ${result.to} шт (коэффициент ${result.ratio.toPrecision(4)})`,
+      hint:
+        "Записана операция «Сплит» с этим коэффициентом — её видно в журнале сделок. " +
+        "Средняя цена пересчитана, себестоимость позиции не изменилась.",
+    };
+  } catch (error) {
+    return toState(error);
+  }
 }

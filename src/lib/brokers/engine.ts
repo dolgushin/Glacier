@@ -11,6 +11,7 @@ import {
   type NewTransaction,
 } from "@/lib/repo";
 import { buildPositions } from "@/lib/domain/positions";
+import { correctionRatio } from "@/lib/domain/correction";
 import { latestFxRates } from "@/lib/sync";
 import { searchCrypto } from "@/lib/providers/coingecko";
 import type { Instrument } from "@/lib/types";
@@ -795,9 +796,73 @@ export async function importOpeningPositions(
   };
 }
 
-/** Sync every mapping the user has enabled. Failures are collected, not thrown. */
-export async function syncAll(
+/**
+ * Привести количество по инструменту к тому, что показывает брокер.
+ *
+ * Пишет операцию «Сплит» с коэффициентом брокер/журнал: расхождение
+ * трактуется как неучтённая консолидация. FIFO пересчитает количество и
+ * среднюю цену лотов, себестоимость и реализованная история не трогаются.
+ * Идемпотентно в пределах дня: повторный вызов натыкается на тот же
+ * external_id и ничего не дублирует.
+ */
+export function applyQuantityCorrection(
   userId: number,
+  linkId: number,
+  symbol: string,
+  brokerQuantity: number,
+): { symbol: string; from: number; to: number; ratio: number } {
+  const { link } = requireLink(userId, linkId);
+
+  const instrument = findInstrument("moex", symbol);
+  if (!instrument) throw new BrokerError(`Инструмент ${symbol} не найден в справочнике`);
+
+  const transactions = listTransactions(userId, { portfolioId: link.portfolio_id });
+  const positions = buildPositions({
+    transactions,
+    instruments: new Map([[instrument.id, instrument]]),
+    fxRates: new Map(),
+    baseCurrency: instrument.currency,
+  });
+  const ledgerQuantity = positions.find(
+    (position) => position.instrument.id === instrument.id,
+  )?.quantity ?? 0;
+
+  const correction = correctionRatio(ledgerQuantity, brokerQuantity);
+  if ("error" in correction) throw new BrokerError(correction.error);
+
+  const today = nowIso().slice(0, 10);
+  addTransactionsBulk(userId, [
+    {
+      portfolioId: link.portfolio_id,
+      instrumentId: instrument.id,
+      type: "SPLIT",
+      ts: nowIso(),
+      quantity: correction.ratio,
+      price: 0,
+      amount: 0,
+      currency: instrument.currency,
+      fxRate: 1,
+      note:
+        `Корректировка количества по брокеру: было ${ledgerQuantity}, стало ${brokerQuantity}. ` +
+        "Трактуется как неучтённая консолидация; если это пропущенные продажи — удалите и внесите их.",
+      source: `correction:${link.connection_id}`,
+      externalId: `adjust:${symbol}:${today}`,
+    },
+  ]);
+
+  run(
+    "INSERT INTO sync_log (user_id, kind, status, detail, started_at, finished_at) VALUES (?, 'broker', 'ok', ?, ?, ?)",
+    userId,
+    `${symbol}: количество приведено к брокеру (${ledgerQuantity} → ${brokerQuantity})`,
+    nowIso(),
+    nowIso(),
+  );
+
+  return { symbol, from: ledgerQuantity, to: brokerQuantity, ratio: correction.ratio };
+}
+
+/** Sync every mapping the user has enabled. Failures are collected, not thrown. */
+export async function syncAll(  userId: number,
 ): Promise<{ results: SyncOutcome[]; errors: string[] }> {
   const links = all<LinkRow>(
     `SELECT l.* FROM broker_links l
